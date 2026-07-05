@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "id": "usr-EXAMPLE",
+    "email": "user@example.com",
+    "displayName": "Example User",
+    "organizations": []
+  }
+}

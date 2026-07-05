@@ -1,0 +1,6 @@
+{
+  "note": "Named provider+model profiles for --profile on delegate/review. ClinePass model profiles are derived automatically from clinepass-models.json and need no entry here. Entries here add profiles for other providers (or override a derived name — explicit entries win). \"model\" is optional: omit it to use that provider's configured default model. This file is hand-maintained; /cline:setup --refresh-models never touches it.",
+  "profiles": [
+    { "name": "cline", "provider": "cline" }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "cline",
+  "version": "0.5.0",
+  "description": "Delegate coding tasks to the Cline CLI on your ClinePass subscription: one-shot delegation, read-only review, usage, setup checks, and named provider+model profiles.",
+  "author": { "name": "Henning Naarlien-Tolpinrud" },
+  "homepage": "https://github.com/tm-henningnt/cline-plugin-cc",
+  "repository": "https://github.com/tm-henningnt/cline-plugin-cc",
+  "license": "MIT",
+  "keywords": ["cline", "clinepass", "delegation", "profiles"]
+}

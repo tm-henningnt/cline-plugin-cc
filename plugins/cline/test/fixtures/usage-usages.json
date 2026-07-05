@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "data": {
+    "total": 0,
+    "nextToken": null,
+    "items": [
+      {
+        "id": "usg-EXAMPLE",
+        "userId": "usr-EXAMPLE",
+        "createdAt": "2026-07-04T09:41:18.143066Z",
+        "creditsUsed": 423,
+        "costUsd": 42348,
+        "operation": "chat_completion",
+        "aiModelName": "laguna-xs-2.1",
+        "promptTokens": 6523,
+        "completionTokens": 83,
+        "totalTokens": 6606,
+        "cachedTokens": 6320
+      },
+      {
+        "id": "usg-EXAMPLE",
+        "userId": "usr-EXAMPLE",
+        "createdAt": "2026-07-04T09:41:12.561247Z",
+        "creditsUsed": 767,
+        "costUsd": 76764,
+        "operation": "chat_completion",
+        "aiModelName": "laguna-xs-2.1",
+        "promptTokens": 6305,
+        "completionTokens": 114,
+        "totalTokens": 6419,
+        "cachedTokens": 272
+      },
+      {
+        "id": "usg-EXAMPLE",
+        "userId": "usr-EXAMPLE",
+        "createdAt": "2026-07-04T09:41:08.555994Z",
+        "creditsUsed": 750,
+        "costUsd": 75084,
+        "operation": "chat_completion",
+        "aiModelName": "laguna-xs-2.1",
+        "promptTokens": 5995,
+        "completionTokens": 131,
+        "totalTokens": 6126,
+        "cachedTokens": 0
+      }
+    ]
+  }
+}

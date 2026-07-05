@@ -1,0 +1,5 @@
+.env.local
+.tmp/
+plans/
+# Local Run ledger
+.cline-runs.ndjson
