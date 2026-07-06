@@ -1,8 +1,9 @@
 // Pure rendering of an extracted Result into the markdown the command relays.
 
 const TRANSPORT_SIGNATURES = [
-  { key: "session-not-found", pattern: /session not found/i },
-  { key: "hook-dispatch-failed", pattern: /hook dispatch failed/i },
+  { key: "session-not-found", pattern: /session not found/i, retryable: true },
+  { key: "hook-dispatch-failed", pattern: /hook dispatch failed/i, retryable: true },
+  { key: "timeout", pattern: /timed out/i, retryable: false },
 ];
 const MODEL_CONTENT_TYPES = new Set(["run_result", "agent_event", "hook_event"]);
 
@@ -34,14 +35,35 @@ export function transportSignature(exitCode, stdout, stderr) {
   return TRANSPORT_SIGNATURES.find((signature) => signature.pattern.test(text))?.key ?? null;
 }
 
+// Returns whether the matched transport signature is retryable.
+export function isTransportRetryable(exitCode, stdout, stderr) {
+  if (exitCode === 0) return false;
+  const text = scannableCrashText(stdout, stderr);
+  return TRANSPORT_SIGNATURES.find((signature) => signature.pattern.test(text))?.retryable ?? false;
+}
+
 // One rendering for "the cline subprocess failed" across delegate/review/setup.
-export function formatRunFailure(exitCode, stdout, stderr) {
+export function formatRunFailure(exitCode, stdout, stderr, failureMeta = {}) {
   const detail = String(stderr || stdout || "")
     .trim()
     .split("\n")
     .slice(-5)
     .join("\n");
-  return `Cline exited with code ${exitCode}.${detail ? `\n${detail}` : ""}`;
+  const lines = [`**Cline Run FAILED (exit ${exitCode})**`];
+
+  if (detail) lines.push("", detail);
+
+  if (failureMeta.transport === "timeout" && failureMeta.toolCalls > 0) {
+    lines.push(
+      "",
+      `The Run timed out during or after doing real work (${failureMeta.toolCalls} tool calls recorded) — the working tree may contain a partial or complete diff. Review \`git diff\` before retrying or escalating.`,
+    );
+  }
+
+  const telemetry = buildFailureTelemetry(exitCode, failureMeta);
+  lines.push(`cline-run: ${JSON.stringify(telemetry)}`);
+
+  return lines.join("\n");
 }
 
 export function formatUsd(value) {
@@ -69,9 +91,24 @@ function buildRunTelemetry(result, annotations) {
   const toolCalls = finiteNumber(result.toolCalls);
   if (toolCalls != null) telemetry.toolCalls = toolCalls;
 
+  const inputTokens = finiteNumber(result.usage?.inputTokens);
+  if (inputTokens != null) telemetry.inputTokens = inputTokens;
+
+  const outputTokens = finiteNumber(result.usage?.outputTokens);
+  if (outputTokens != null) telemetry.outputTokens = outputTokens;
+
   if (result.finishReason != null) telemetry.finishReason = result.finishReason;
   if (annotations.retried) telemetry.retried = true;
   if (annotations.salvaged) telemetry.salvaged = true;
+  return telemetry;
+}
+
+export function buildFailureTelemetry(exitCode, annotations) {
+  const telemetry = { ok: false, exitCode };
+  if (annotations.transport) telemetry.transport = annotations.transport;
+  if (annotations.retried) telemetry.retried = true;
+  const tc = finiteNumber(annotations?.toolCalls);
+  if (tc != null) telemetry.toolCalls = tc;
   return telemetry;
 }
 

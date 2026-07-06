@@ -26,6 +26,9 @@ import {
 } from "./lib/setup.mjs";
 import { redactAccountPath, usage } from "./lib/usage.mjs";
 
+const DEFAULT_TIMEOUT_S = 600;
+const DEFAULT_READONLY_TIMEOUT_S = 1800;
+
 const CLINEPASS_MODELS_PATH = fileURLToPath(
   new URL("../data/clinepass-models.json", import.meta.url),
 );
@@ -249,8 +252,10 @@ async function main() {
     applyProfileOrExit(opts, project);
     // Default timeout so a stuck Run can't block the session indefinitely
     // (cline's own default is 0 = no timeout). Override with --timeout.
+    // Read-only Runs (--plan / --read-only) default to a longer timeout;
+    // writing Runs stay at the shorter default.
     if (opts.timeoutSeconds == null || Number.isNaN(opts.timeoutSeconds)) {
-      opts.timeoutSeconds = 600;
+      opts.timeoutSeconds = opts.plan || opts.readOnly ? DEFAULT_READONLY_TIMEOUT_S : DEFAULT_TIMEOUT_S;
     }
     const stdin = await readStdin();
     if (stdin.trim()) opts.stdin = stdin;
@@ -273,8 +278,9 @@ async function main() {
     applyProfileOrExit(opts, project);
     // Default timeout so a stuck Run can't block the session indefinitely
     // (cline's own default is 0 = no timeout). Override with --timeout.
+    // Review is always plan mode (read-only), so use the longer default.
     if (opts.timeoutSeconds == null || Number.isNaN(opts.timeoutSeconds)) {
-      opts.timeoutSeconds = 600;
+      opts.timeoutSeconds = DEFAULT_READONLY_TIMEOUT_S;
     }
     opts.diff = await readStdin();
     const out = await review(opts, { run: realRun });
@@ -338,6 +344,7 @@ async function main() {
       models: modelBundle.models,
       profiles: profileBundle.profiles,
       project: findProjectProfiles(cwd),
+      pricingAsOf: modelBundle.pricingAsOf,
     });
     process.stdout.write(out + "\n");
     process.exit(0);

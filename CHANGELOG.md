@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.6.0] - 2026-07-06
+
+Second-field-build follow-through (Tetris TUI): richer profile discovery, failure telemetry
+that's as machine-readable as success, a long-Run dispatch fix, and longer read-only timeouts.
+
+- Added: `/cline:profiles` now shows list price per M tokens (in/out/cached), a relative drain
+  weight, and context-window size for each ClinePass model. Prices are flat-rate plan
+  window-drain weights, not bills; a `pricingAsOf` date in the bundled snapshot keeps the
+  display honest, and the per-model pricing/context data survives `--refresh-models` (which
+  re-scrapes slugs, not prices).
+- Added: failure output now starts with a bold `**Cline Run FAILED (exit N)**` line and ends
+  with a `cline-run: {"ok":false,…}` telemetry trailer, so every Run — pass or fail — has a
+  machine-parseable last line (including `toolCalls`). Timeout is classified as a distinct
+  `"timeout"` transport signature and is never retried; when the Run did real work, the failure
+  text includes a `git diff` hint. The success trailer gains `inputTokens`/`outputTokens` when
+  the model reports them.
+- Changed: read-only Runs (`--plan`, `--read-only`, and every `/cline:review`) now default to a
+  1800 s timeout instead of 600 s — whole-codebase audits were hitting the old default; writing
+  Runs are unchanged.
+- Changed: the CLAUDE.md guidance snippet is bumped to v4 — worktree-based parallel dispatch
+  (with the same-base-commit staleness caveat), failed-Runs-may-contain-work and
+  substituted-verification-proves-nothing rules, and explicit `--timeout` sizing on heavy tasks.
+  Existing installs get the `/cline:setup` upgrade offer.
+- Fixed: timed-out Runs no longer ledger silently as `costUsd: 0`; they record
+  `finishReason: "timeout"` (and partial cost when mid-stream usage is available).
+- Fixed: the `cline:delegate` agent could end its turn with a long Run still executing (any Run
+  whose `--timeout` exceeds the Bash tool's 600 s cap). It now backgrounds and polls such Runs
+  and never exits with a Run in flight; it also knows read-only Runs default to 1800 s.
+- Docs: the CLI contract records the observed timeout behavior (signal on stderr, stdout ends
+  `finishReason: "aborted"`), a second field build's cross-profile transport-failure evidence
+  (with a drafted upstream report), and that per-model pricing/context come from the CLI's
+  `run_result.model.info` rather than any `/models` list endpoint.
+
 ## [0.5.0] - 2026-07-06
 
 Initial public release.

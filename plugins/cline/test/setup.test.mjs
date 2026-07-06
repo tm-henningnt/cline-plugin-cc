@@ -374,7 +374,7 @@ test("formatSetupReport: lists available profile names", () => {
   });
 
   assert.match(text, /Project profiles: `\/tmp\/example\/\.cline-profiles\.json` \(1 profile\)/);
-  assert.match(text, /Available profiles/);
+  assert.match(text, /\*\*Cline Profiles\*\*/);
   assert.match(text, /`quick` → provider `cline-pass`, model `cline-pass\/deepseek-v4-flash` — project/);
   assert.match(text, /`cline` → provider `cline`, model: provider default/);
   assert.match(text, /`glm-5\.2` → provider `cline-pass`, model `cline-pass\/glm-5\.2`/);
@@ -644,7 +644,7 @@ test("summarizeTestRun: reports non-zero exits with the stderr tail", () => {
   });
 
   assert.equal(out.ok, false);
-  assert.match(out.detail, /Cline exited with code 2/);
+  assert.match(out.detail, /\*\*Cline Run FAILED \(exit 2\)\*\*/);
   assert.match(out.detail, /two\nthree\nfour\nfive\nsix/);
   assert.doesNotMatch(out.detail, /one/);
 });
@@ -718,6 +718,134 @@ test("refreshModels: empty docs do not write", async () => {
 
   assert.equal(out.ok, false);
   assert.equal(writeAttempted, false);
+});
+
+test("formatProfilesReport: renders pricing, drain, and context for a fully-specified ClinePass model", () => {
+  const models = [
+    {
+      slug: "cline-pass/kimi-k2.7-code",
+      name: "Kimi K2.7 Code",
+      guidance: "coding tasks",
+      pricing: { inputPerMTok: 0.74, outputPerMTok: 3.5, cachedReadPerMTok: 0.15 },
+      contextWindow: 262144,
+    },
+    {
+      slug: "cline-pass/deepseek-v4-flash",
+      name: "DeepSeek V4 Flash",
+      guidance: "fast iteration",
+      pricing: { inputPerMTok: 0.09, outputPerMTok: 0.18, cachedReadPerMTok: 0.018 },
+      contextWindow: 1048576,
+    },
+  ];
+
+  const text = formatProfilesReport({ models, profiles: [], project: null, pricingAsOf: "2026-07-06" });
+
+  assert.match(
+    text,
+    /`kimi-k2\.7-code` → provider `cline-pass`, model `cline-pass\/kimi-k2\.7-code` — ClinePass model · coding tasks · \$0\.74\/\$3\.50\/\$0\.15 per Mtok \(in\/out\/cached\) · drain ×19\.4 · ctx 262K/,
+  );
+  assert.match(
+    text,
+    /`deepseek-v4-flash` → provider `cline-pass`, model `cline-pass\/deepseek-v4-flash` — ClinePass model · fast iteration · \$0\.090\/\$0\.18\/\$0\.018 per Mtok \(in\/out\/cached\) · drain ×1\.0 · ctx 1M/,
+  );
+  assert.match(
+    text,
+    /_Pricing per M tokens as of 2026-07-06; drain ×N = output price relative to the cheapest ClinePass model\. Flat-rate: prices are window-drain weights, not bills\._/,
+  );
+});
+
+test("formatProfilesReport: leaves non-ClinePass lines unchanged when no pricing is available", () => {
+  const text = formatProfilesReport({ models: [], profiles: PROFILES, project: null, pricingAsOf: "2026-07-06" });
+
+  assert.match(text, /`cline` → provider `cline`, model: provider default — built-in(?!.*drain)/);
+  assert.match(text, /`fast` → provider `acme`, model `acme\/turbo` — built-in(?!.*drain)/);
+});
+
+test("formatProfilesReport: drain weight uses the cheapest ClinePass output price", () => {
+  const models = [
+    {
+      slug: "cline-pass/deepseek-v4-flash",
+      name: "DeepSeek V4 Flash",
+      pricing: { inputPerMTok: 0.09, outputPerMTok: 0.18, cachedReadPerMTok: 0.018 },
+      contextWindow: 1048576,
+    },
+    { slug: "cline-pass/mimo-v2.5", name: "MiMo-V2.5", pricing: { inputPerMTok: 0.105, outputPerMTok: 0.28, cachedReadPerMTok: 0 }, contextWindow: 32000 },
+    { slug: "cline-pass/glm-5.2", name: "GLM-5.2", pricing: { inputPerMTok: 0.93, outputPerMTok: 3.0, cachedReadPerMTok: 0.18 }, contextWindow: 1048576 },
+  ];
+
+  const text = formatProfilesReport({ models, profiles: [], project: null, pricingAsOf: "2026-07-06" });
+
+  assert.match(text, /deepseek-v4-flash.*drain ×1\.0/);
+  assert.match(text, /mimo-v2\.5.*drain ×1\.6/);
+  assert.match(text, /glm-5\.2.*drain ×16\.7/);
+});
+
+test("formatProfilesReport: cachedWrite prices render when present", () => {
+  const models = [
+    {
+      slug: "cline-pass/qwen3.7-max",
+      name: "Qwen3.7 Max",
+      pricing: { inputPerMTok: 1.25, outputPerMTok: 3.75, cachedReadPerMTok: 0.25, cachedWritePerMTok: 1.5625 },
+      contextWindow: 1000000,
+    },
+  ];
+
+  const text = formatProfilesReport({ models, profiles: [], project: null, pricingAsOf: "2026-07-06" });
+
+  assert.match(text, /\$1\.25\/\$3\.75\/\$0\.25\/\$1\.56 per Mtok \(in\/out\/cachedR\/cachedW\)/);
+});
+
+test("refreshModels: preserves pricing and contextWindow for surviving slugs and pricingAsOf at top level", async () => {
+  let written = null;
+  const out = await refreshModels(
+    { nowIso: "2026-07-04T00:00:00.000Z", source: "https://example.test/models" },
+    {
+      fetchText: async () => ["cline-pass/glm-5.2", "cline-pass/new-model", "cline-pass/qwen3.7-max"].join("\n"),
+      readModels: async () => ({
+        pricingAsOf: "2026-07-06",
+        models: [
+          {
+            slug: "cline-pass/glm-5.2",
+            name: "GLM-5.2",
+            guidance: "deep reasoning",
+            pricing: { inputPerMTok: 0.93, outputPerMTok: 3.0, cachedReadPerMTok: 0.18 },
+            contextWindow: 1048576,
+          },
+          { slug: "cline-pass/dropped", name: "Dropped", guidance: "old" },
+          {
+            slug: "cline-pass/qwen3.7-max",
+            name: "Qwen3.7 Max",
+            guidance: "heavy workloads",
+            pricing: { inputPerMTok: 1.25, outputPerMTok: 3.75, cachedReadPerMTok: 0.25, cachedWritePerMTok: 1.5625 },
+            contextWindow: 1000000,
+          },
+        ],
+      }),
+      writeModels: async (obj) => {
+        written = obj;
+      },
+    },
+  );
+
+  assert.equal(out.ok, true);
+  assert.equal(written.pricingAsOf, "2026-07-06");
+  assert.deepEqual(written.models, [
+    {
+      slug: "cline-pass/glm-5.2",
+      name: "GLM-5.2",
+      guidance: "deep reasoning",
+      pricing: { inputPerMTok: 0.93, outputPerMTok: 3.0, cachedReadPerMTok: 0.18 },
+      contextWindow: 1048576,
+    },
+    { slug: "cline-pass/new-model", name: "cline-pass/new-model" },
+    {
+      slug: "cline-pass/qwen3.7-max",
+      name: "Qwen3.7 Max",
+      guidance: "heavy workloads",
+      pricing: { inputPerMTok: 1.25, outputPerMTok: 3.75, cachedReadPerMTok: 0.25, cachedWritePerMTok: 1.5625 },
+      contextWindow: 1000000,
+    },
+  ]);
 });
 
 test("refreshModels: preserves hand-maintained fields for surviving slugs", async () => {

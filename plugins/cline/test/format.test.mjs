@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatResult, isTransportCrash } from "../scripts/lib/format.mjs";
+import {
+  formatResult,
+  isTransportCrash,
+  isTransportRetryable,
+  transportSignature,
+  formatRunFailure,
+  buildFailureTelemetry,
+} from "../scripts/lib/format.mjs";
 
 function parseTrailer(text) {
   const line = text.split("\n").find((candidate) => candidate.startsWith("cline-run: "));
@@ -159,4 +166,150 @@ test("isTransportCrash: scans plain stderr", () => {
 
 test("isTransportCrash: exit 0 is never a crash", () => {
   assert.equal(isTransportCrash(0, "session not found", "session not found"), false);
+});
+
+test("transportSignature: classifies timeout error on stderr", () => {
+  assert.equal(transportSignature(1, "", "{\"message\":\"run timed out after 5s\"}"), "timeout");
+});
+
+test("transportSignature: hook-dispatch-failed wins over timeout when combined", () => {
+  // Real crash: hook dispatch failed line followed by "The operation timed out."
+  // timeout is last in the table, so hook-dispatch-failed wins.
+  assert.equal(
+    transportSignature(
+      1,
+      '{"ts":"...","type":"error","message":"hook dispatch failed: session.hook requires a valid hook event payload"}',
+      "The operation timed out.",
+    ),
+    "hook-dispatch-failed",
+  );
+});
+
+test("transportSignature: timeout text on stderr classified even with empty stdout", () => {
+  assert.equal(transportSignature(1, "", "run timed out after 600s"), "timeout");
+});
+
+test("transportSignature: exit 0 returns null regardless of text", () => {
+  assert.equal(transportSignature(0, "run timed out after 5s", "run timed out after 5s"), null);
+});
+
+test("isTransportRetryable: timeout is not retryable", () => {
+  assert.equal(isTransportRetryable(1, "", "run timed out after 5s"), false);
+});
+
+test("isTransportRetryable: session-not-found is retryable", () => {
+  assert.equal(isTransportRetryable(1, "", "session not found"), true);
+});
+
+test("isTransportRetryable: exit 0 returns false", () => {
+  assert.equal(isTransportRetryable(0, "run timed out after 5s", ""), false);
+});
+
+test("formatRunFailure: first line is bold FAILED with exit code", () => {
+  const text = formatRunFailure(2, "", "auth expired");
+  assert.match(text, /^\*\*Cline Run FAILED \(exit 2\)\*\*/);
+  assert.match(text, /auth expired/);
+});
+
+test("formatRunFailure: includes failure trailer as last line", () => {
+  const text = formatRunFailure(2, "", "auth expired");
+  const lastLine = text.split("\n").at(-1);
+  assert.match(lastLine, /^cline-run: /);
+  const parsed = JSON.parse(lastLine.slice("cline-run: ".length));
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.exitCode, 2);
+});
+
+test("formatRunFailure: timeout with toolCalls includes diff hint", () => {
+  const text = formatRunFailure(1, "", "run timed out after 5s", {
+    transport: "timeout",
+    toolCalls: 17,
+  });
+  assert.match(text, /The Run timed out during or after doing real work \(17 tool calls recorded\)/);
+  assert.match(text, /git diff/);
+});
+
+test("formatRunFailure: timeout with zero toolCalls omits diff hint", () => {
+  const text = formatRunFailure(1, "", "run timed out after 5s", {
+    transport: "timeout",
+    toolCalls: 0,
+  });
+  assert.doesNotMatch(text, /git diff/);
+});
+
+test("formatRunFailure: failure trailer carries toolCalls when annotations carry a count", () => {
+  const text = formatRunFailure(1, "", "run timed out after 5s", {
+    transport: "timeout",
+    toolCalls: 17,
+  });
+  const lastLine = text.split("\n").at(-1);
+  assert.match(lastLine, /^cline-run: /);
+  const parsed = JSON.parse(lastLine.slice("cline-run: ".length));
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.exitCode, 1);
+  assert.equal(parsed.transport, "timeout");
+  assert.equal(parsed.toolCalls, 17);
+});
+
+test("formatRunFailure: failure trailer omits toolCalls when annotations carry no count", () => {
+  const text = formatRunFailure(2, "", "auth expired", {
+    transport: "session-not-found",
+  });
+  const lastLine = text.split("\n").at(-1);
+  const parsed = JSON.parse(lastLine.slice("cline-run: ".length));
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.exitCode, 2);
+  assert.equal(parsed.transport, "session-not-found");
+  assert.equal("toolCalls" in parsed, false);
+});
+
+test("formatRunFailure: failure trailer carries transport and retried when given", () => {
+  const text = formatRunFailure(1, "", "session not found", {
+    transport: "session-not-found",
+    retried: true,
+    toolCalls: 0,
+  });
+  const lastLine = text.split("\n").at(-1);
+  const parsed = JSON.parse(lastLine.slice("cline-run: ".length));
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.transport, "session-not-found");
+  assert.equal(parsed.retried, true);
+});
+
+test("buildFailureTelemetry: includes ok, exitCode, transport and toolCalls from annotations", () => {
+  const telemetry = buildFailureTelemetry(1, { transport: "timeout", retried: false, toolCalls: 5 });
+  assert.deepEqual(telemetry, { ok: false, exitCode: 1, transport: "timeout", toolCalls: 5 });
+});
+
+test("buildFailureTelemetry: omits transport when absent", () => {
+  const telemetry = buildFailureTelemetry(2, { toolCalls: 3 });
+  assert.deepEqual(telemetry, { ok: false, exitCode: 2, toolCalls: 3 });
+});
+
+test("buildFailureTelemetry: omits toolCalls when annotations carry no count", () => {
+  assert.equal("toolCalls" in buildFailureTelemetry(1, {}), false);
+});
+
+test("formatResult: success trailer includes inputTokens and outputTokens when present", () => {
+  const text = formatResult({
+    finishReason: "completed",
+    summary: "done",
+    model: "m",
+    usage: { inputTokens: 12000, outputTokens: 450 },
+  });
+  const parsed = parseTrailer(text);
+  assert.equal(parsed.inputTokens, 12000);
+  assert.equal(parsed.outputTokens, 450);
+});
+
+test("formatResult: success trailer omits token fields when absent", () => {
+  const text = formatResult({
+    finishReason: "completed",
+    summary: "done",
+    model: "m",
+    usage: { totalCost: 0.1 },
+  });
+  const parsed = parseTrailer(text);
+  assert.equal("inputTokens" in parsed, false);
+  assert.equal("outputTokens" in parsed, false);
 });

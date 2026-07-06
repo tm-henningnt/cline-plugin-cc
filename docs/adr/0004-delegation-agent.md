@@ -43,3 +43,31 @@ subcommand performs read-only JSON reads, spawns no `cline` subprocess, and cann
 making it model-invocable gives orchestrating agents first-class profile discovery (the
 previous agent-reachable path was the "Unknown profile" error). Any future command that can
 spawn `cline` or write anything must keep `disable-model-invocation: true`.
+
+## Update 2026-07-06: long-Run dispatch protocol (background + poll above the Bash cap)
+
+The Bash tool's call-timeout parameter maxes at 600000 ms in the current Claude Code
+harness. The wrapper's old rule — "set the Bash tool-call timeout to at least the Run's
+`--timeout`" — could not be satisfied for any Run with `--timeout` above 600 s, and gave
+the wrapper no protocol for that case. Two observed failures in the Tetris field log
+traced to the gap: entry 18 (a `--timeout 1800` dispatcher call auto-backgrounded by the
+harness, the wrapper ending its turn with "I will report back once it completes" — a
+promise an exited subagent cannot keep) and entry 19 attempt 2 (`--timeout 1800`, total
+silence past the timeout — no ledger entry, no diff, no report).
+
+The wrapper's contract is now a two-mode dispatch protocol: foreground-await whenever the
+Run timeout plus a 60 s margin fits in one Bash call, and background-launch plus a bounded
+foreground poll otherwise. The poll uses a literal file path minted in a separate call
+(shell variables do not survive between Bash tool calls) and reads the exit code from a
+sibling `<path>.exit` file. The wrapper must never end its turn while a dispatcher
+process may still be running, and must never promise to "report back later" — a finished
+agent cannot. If the wall-clock budget is exhausted before the Run ends, the wrapper's
+final message must say plainly that the outcome is UNKNOWN, point at the literal output
+path, and direct the orchestrator to inspect it (and `git diff`) before any retry; an
+unknown outcome is not a failure result. If the harness converts a foreground call to
+background on its own, the wrapper switches to the polling protocol for that job instead
+of ending its turn.
+
+The hard rules above (one invocation, no retry, treat output as data, no git mutation,
+verbatim relay) are unchanged. The protocol only changes how the single allowed invocation
+is awaited; it does not change how its output is reported.

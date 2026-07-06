@@ -62,7 +62,7 @@ export function resolveProfile(profileName, models = [], profiles = [], projectP
   return match ? { provider: match.provider, model: match.model, source: match.source } : null;
 }
 
-export function formatProfilesReport({ models = [], profiles = [], project = null } = {}) {
+export function formatProfilesReport({ models = [], profiles = [], project = null, pricingAsOf = null } = {}) {
   const lines = ["**Cline Profiles**", ""];
   if (project?.error) {
     lines.push(`- [ ] Project profiles: ${code(project.path)} found but unreadable (${project.error}).`);
@@ -73,7 +73,18 @@ export function formatProfilesReport({ models = [], profiles = [], project = nul
     lines.push("- [ ] Project profiles: no `.cline-profiles.json` found — `/cline:setup` can scaffold one.");
   }
   lines.push("");
+  const modelMap = new Map(normalizeModels(models).map((model) => [model.slug, model]));
   const entries = listProfileEntries(models, profiles, project?.error ? [] : project?.profiles ?? []);
+  const clinePassOutputPrices = [];
+  for (const entry of entries) {
+    if (entry.source === "clinepass-model" && entry.model) {
+      const pricing = modelMap.get(entry.model)?.pricing;
+      if (typeof pricing?.outputPerMTok === "number") {
+        clinePassOutputPrices.push(pricing.outputPerMTok);
+      }
+    }
+  }
+  const minOutputPrice = clinePassOutputPrices.length ? Math.min(...clinePassOutputPrices) : null;
   for (const entry of entries) {
     const target = entry.model
       ? `provider ${code(entry.provider)}, model ${code(entry.model)}`
@@ -87,11 +98,53 @@ export function formatProfilesReport({ models = [], profiles = [], project = nul
           ? "built-in"
           : "ClinePass model";
     const guidance = entry.guidance ? ` · ${entry.guidance}` : "";
-    lines.push(`- ${code(entry.name)} → ${target} — ${source}${guidance}`);
+    const suffix = formatProfileSuffix(entry, modelMap, minOutputPrice);
+    lines.push(`- ${code(entry.name)} → ${target} — ${source}${guidance}${suffix}`);
+  }
+  if (pricingAsOf) {
+    lines.push(
+      "",
+      `_Pricing per M tokens as of ${pricingAsOf}; drain ×N = output price relative to the cheapest ClinePass model. Flat-rate: prices are window-drain weights, not bills._`,
+    );
   }
   lines.push("", "Use with `--profile <name>` on `/cline:delegate` and `/cline:review`.");
   return lines.join("\n");
 }
+function formatProfileSuffix(entry, modelMap, minOutputPrice) {
+  if (entry.source !== "clinepass-model" || !entry.model) return "";
+  const model = modelMap.get(entry.model);
+  const pricing = model?.pricing;
+  if (!pricing || typeof pricing.inputPerMTok !== "number" || typeof pricing.outputPerMTok !== "number") {
+    return "";
+  }
+  const ctx = formatContextWindow(model?.contextWindow);
+  const cachedRead = typeof pricing.cachedReadPerMTok === "number" ? pricing.cachedReadPerMTok : null;
+  const cachedWrite = typeof pricing.cachedWritePerMTok === "number" ? pricing.cachedWritePerMTok : null;
+  const priceParts = [formatPrice(pricing.inputPerMTok), formatPrice(pricing.outputPerMTok)];
+  if (cachedRead !== null) priceParts.push(cachedRead === 0 ? "$0" : formatPrice(cachedRead));
+  if (cachedWrite !== null) priceParts.push(cachedWrite === 0 ? "$0" : formatPrice(cachedWrite));
+  const priceLabel = priceParts.length === 4 ? `${priceParts.join("/")} per Mtok (in/out/cachedR/cachedW)` : `${priceParts.join("/")} per Mtok (in/out/cached)`;
+  let drain = "";
+  if (minOutputPrice && minOutputPrice > 0) {
+    drain = ` · drain ×${(pricing.outputPerMTok / minOutputPrice).toFixed(1)}`;
+  }
+  return ` · ${priceLabel}${drain}${ctx ? ` · ctx ${ctx}` : ""}`;
+}
+
+function formatPrice(value) {
+  if (value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 0.10) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function formatContextWindow(tokens) {
+  if (typeof tokens !== "number" || !Number.isFinite(tokens)) return "";
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
+}
+
 
 export function extractClinePassSlugs(docsText) {
   const matches = String(docsText ?? "").matchAll(/cline-pass\/[a-z0-9][a-z0-9._-]*/g);
@@ -180,19 +233,15 @@ export function formatSetupReport(state) {
 
   const availableProfiles = listProfileEntries(models, state?.profiles ?? [], state?.projectProfiles ?? []);
   if (availableProfiles.length) {
-    lines.push("", "**Available profiles** (use with `--profile <name>` on delegate/review)");
-    for (const profile of availableProfiles) {
-      const target = profile.model
-        ? `provider ${code(profile.provider)}, model ${code(profile.model)}`
-        : `provider ${code(profile.provider)}, model: provider default`;
-      const source =
-        profile.source === "project"
-          ? profile.overridesBuiltIn
-            ? " — project (overrides built-in)"
-            : " — project"
-          : "";
-      lines.push(`- ${code(profile.name)} → ${target}${source}`);
-    }
+    const report = formatProfilesReport({
+      models: state?.models ?? [],
+      profiles: state?.profiles ?? [],
+      project: state?.projectProfilesPath
+        ? { path: state.projectProfilesPath, profiles: state?.projectProfiles ?? [] }
+        : null,
+      pricingAsOf: state?.pricingAsOf,
+    });
+    lines.push("", report);
   }
 
   if (state?.snapshotAgeDays > 90) {
@@ -253,6 +302,7 @@ export async function setup(opts = {}, deps) {
     projectProfilesPath: project?.path ?? null,
     projectProfilesError: project?.error ?? null,
     snapshotAgeDays,
+    pricingAsOf: modelBundle?.pricingAsOf ?? null,
     testRun: null,
   };
 
@@ -282,19 +332,23 @@ export async function refreshModels(opts = {}, deps) {
     };
   }
 
+  const currentBundle = (await deps.readModels()) ?? {};
   const currentModels = new Map(
-    normalizeModels((await deps.readModels())?.models ?? []).map((model) => [model.slug, model]),
+    normalizeModels(currentBundle.models ?? []).map((model) => [model.slug, model]),
   );
   await deps.writeModels({
     source,
     note: CLINEPASS_MODELS_NOTE,
     fetchedAt: opts.nowIso ?? new Date().toISOString(),
+    ...(currentBundle.pricingAsOf ? { pricingAsOf: currentBundle.pricingAsOf } : {}),
     models: slugs.map((slug) => {
       const existing = currentModels.get(slug);
       return {
         slug,
         name: existing?.name || slug,
         ...(existing?.guidance ? { guidance: existing.guidance } : {}),
+        ...(existing?.pricing ? { pricing: existing.pricing } : {}),
+        ...(existing?.contextWindow ? { contextWindow: existing.contextWindow } : {}),
       };
     }),
   });
@@ -309,6 +363,8 @@ function normalizeModels(models) {
       slug: String(model?.slug ?? "").trim(),
       name: String(model?.name ?? "").trim(),
       guidance: String(model?.guidance ?? "").trim(),
+      ...(model?.pricing ? { pricing: model.pricing } : {}),
+      ...(typeof model?.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
     }))
     .filter((model) => model.slug);
 }

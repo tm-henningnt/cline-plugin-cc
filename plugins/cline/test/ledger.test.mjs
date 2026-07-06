@@ -216,3 +216,48 @@ test("formatLedgerSummary: renders counts, cost and integer ok percentage", () =
   assert.match(text, /All time: 4 Runs · \$0\.600000/);
   assert.match(text, /cline-pass\/a: 2 Runs · 2 ok · \$0\.300000 · avg 75s/);
 });
+
+test("buildLedgerEntry: timed-out transport sets finishReason to timeout", () => {
+  const entry = buildLedgerEntry({
+    cmd: "delegate",
+    profile: "quick",
+    opts: { provider: "cline-pass", model: "cline-pass/deepseek-v4-pro" },
+    out: {
+      ok: false,
+      runMeta: {
+        exitCode: 1,
+        retried: false,
+        salvaged: false,
+        transport: "timeout",
+      },
+    },
+    nowIso: NOW,
+  });
+
+  assert.equal(entry.ok, false);
+  assert.equal(entry.transport, "timeout");
+  assert.equal(entry.finishReason, "timeout");
+  assert.equal("costUsd" in entry, false);
+});
+
+test("buildLedgerEntry: non-timeout transport leaves finishReason absent", () => {
+  const entry = buildLedgerEntry({
+    cmd: "review",
+    profile: "careful",
+    opts: { provider: "cline-pass", model: "cline-pass/kimi-k2.7-code" },
+    out: {
+      ok: false,
+      runMeta: {
+        exitCode: 1,
+        retried: true,
+        salvaged: false,
+        transport: "session-not-found",
+      },
+    },
+    nowIso: NOW,
+  });
+
+  assert.equal(entry.ok, false);
+  assert.equal(entry.transport, "session-not-found");
+  assert.equal("finishReason" in entry, false);
+});

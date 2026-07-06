@@ -1,5 +1,5 @@
-import { formatResult, formatRunFailure, transportSignature } from "./format.mjs";
-import { extractResult } from "./parse-ndjson.mjs";
+import { formatResult, formatRunFailure, isTransportRetryable, transportSignature } from "./format.mjs";
+import { extractResult, parseNdjson } from "./parse-ndjson.mjs";
 
 export const TRANSPORT_RETRY_NOTE =
   "Note: cline hit a transport error (known signature) and the Run was retried once.";
@@ -37,13 +37,24 @@ function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transpor
       };
     }
 
+    const { events } = parseNdjson(stdout);
+    const toolCalls = events.filter(
+      (e) => e && e.type === "hook_event" && e.hookEventName === "tool_call",
+    ).length;
+    const failureMeta = {
+      transport: runMetaBase.transport,
+      retried: runMetaBase.retried,
+      salvaged: false,
+      toolCalls,
+    };
+
     return {
       output: {
         ok: false,
-        text: formatRunFailure(exitCode, stdout, stderr),
+        text: formatRunFailure(exitCode, stdout, stderr, failureMeta),
         runMeta: buildRunMeta(exitCode, { ...runMetaBase, salvaged: false }),
       },
-      shouldRetry: signature != null,
+      shouldRetry: isTransportRetryable(exitCode, stdout, stderr),
     };
   }
 

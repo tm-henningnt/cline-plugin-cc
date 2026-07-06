@@ -37,14 +37,29 @@ the LAST `run_result`, treat its absence or `finishReason !== "completed"` as no
 
 ## Observed transport failures (cline 3.0.37)
 
-Two transport-layer crash signatures have been observed in real Runs:
+Two transport-layer crash signatures have been observed across two field builds on two
+different networks:
 
 - `session not found`
 - `hook dispatch failed: session.hook requires a valid hook event payload`, followed by
   `The operation timed out.`
 
-In one real 15-task build, these signatures appeared in 6 of 15 Cline attempts, including solo
-and concurrent Runs, and without correlation to the selected profile. The plugin policy is narrow:
+In the first build (15 tasks), these signatures appeared in 6 of 15 Cline attempts. In the
+second build (Tetris, 20+ tasks), the `hook dispatch failed` signature recurred four times
+across two different profiles (2× `glm-5.2`, 2× `kimi-k2.6`) — enough to retire the
+"maybe it's glm-5.2-specific" question. A general ClinePass/plugin transport reliability
+issue, not tied to one model provider. Across both builds, roughly 40% of Runs crashed with
+one of these signatures, solo and concurrent alike.
+
+On the hook-dispatch error path, the Run dies at ~600–604 s even with `--timeout 1800` set.
+The plugin passes `-t 1800` correctly (`buildDelegateArgv` appends `-t <seconds>` verbatim),
+so the ~600 s death is cline-internal — worth asking upstream whether this error path has
+its own internal timeout regardless of the flag.
+
+A new failure shape: one retry produced total silence — no ledger line, no diff, no error,
+past the 1800 s budget. Observed in both solo and concurrent Runs.
+
+The plugin policy is narrow:
 if stdout contains a completed `run_result`, the completed Result is salvaged even when the CLI
 exits non-zero; otherwise, a Run with one of these signatures is retried once and the retry is
 called out visibly in the relayed output. Other failures are not retried.
@@ -53,7 +68,28 @@ Note that a retried writing Run re-executes the full task on a working tree that
 contain the first attempt's partial writes; Cline generally converges on the existing work, but
 the reviewed diff can be the union of both attempts.
 
-The upstream root cause is unconfirmed.
+The upstream root cause is unconfirmed; a draft issue report with the full evidence is
+maintained by the maintainers.
+
+## Timeout behavior (cline 3.0.37)
+
+When the `--json` CLI run is killed with `-t <seconds>`:
+
+- **stderr** carries exactly one JSON error line:
+  `{"ts":"…","type":"error","message":"run timed out after <N>s"}`.
+  This is the `/timed out/i` signal the plugin scans for classification.
+- **stdout** ends with a `run_result` whose `finishReason` is `"aborted"` (NOT
+  `"completed"` and NOT a distinct `"timeout"` reason). All `usage` token and
+  cost fields are `0`. The stdout contains **no** "timed out" text — the signal
+  is on stderr only.
+- The `run_result` IS present, so `extractResult` returns `ok: false` — the
+  Run lands in the failure branch, not the salvage-completed-Run path.
+- No mid-stream `usage` agent_events with non-zero tokens were observed;
+  partial-cost salvage is not possible from the stream captured here.
+- **Plugin policy**: timeout is classified as `"timeout"` and is **never**
+  retried (the Run already ran to its time limit; re-running would burn
+  another full window with the same risk). The ledger records
+  `finishReason: "timeout"` for these Runs.
 
 ## Providers: ClinePass is `cline-pass`, not `cline`
 
@@ -64,9 +100,7 @@ tier (observed model: `poolside/laguna-xs-2.1`); only `-P cline-pass` returns
 subscription. The CLI's own default provider is `cline` — which is why delegate/review always
 pass `-P cline-pass` explicitly (ADR-0002).
 
-There is **no programmatic model list** (REST `/models` 404s; `cline config --json` requires a
-TTY). The bundled `plugins/cline/data/clinepass-models.json` snapshot is scraped from the
-ClinePass docs and refreshed via `/cline:setup --refresh-models`.
+There is **no programmatic model list endpoint** (REST `/models` 404s; `cline config --json` requires a TTY). However, each Run's `run_result.model.info` carries per-model `pricing` and `contextWindow`, which is where `/cline:profiles`' pricing data was harvested from (dated by the bundle's `pricingAsOf`, preserved across `--refresh-models`). The bundled `plugins/cline/data/clinepass-models.json` snapshot is scraped from the ClinePass docs and refreshed via `/cline:setup --refresh-models`.
 
 ## Auth
 

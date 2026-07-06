@@ -69,7 +69,7 @@ test("review: a non-zero exit is reported, not swallowed", async () => {
   const out = await review({ diff: "+broken\n" }, { run });
 
   assert.equal(out.ok, false);
-  assert.match(out.text, /exited with code 2/);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 2\)\*\*/);
   assert.match(out.text, /auth expired/);
 });
 
@@ -148,7 +148,7 @@ test("review: reports the second transport crash after one retry", async () => {
   assert.equal(out.ok, false);
   assert.equal(calls.length, 2);
   assert.match(out.text, /^Note: cline hit a transport error \(known signature\) and the Run was retried once\./);
-  assert.match(out.text, /Cline exited with code 1/);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
   assert.match(out.text, /hook dispatch failed/);
 });
 
@@ -158,7 +158,8 @@ test("review: non-transport failures are not retried", async () => {
 
   assert.equal(out.ok, false);
   assert.equal(calls.length, 1);
-  assert.equal(out.text, "Cline exited with code 1.\nauth expired");
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
+  assert.match(out.text, /auth expired/);
 });
 
 test("review: transport signatures do not retry when completed output is salvageable", async () => {

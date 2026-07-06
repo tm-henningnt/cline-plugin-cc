@@ -240,7 +240,7 @@ test("dispatcher: delegate reports failure after both transport attempts crash",
 
   assert.equal(out.code, 1);
   assert.match(out.stdout, /^Note: cline hit a transport error \(known signature\) and the Run was retried once\./);
-  assert.match(out.stdout, /Cline exited with code 1/);
+  assert.match(out.stdout, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
   assert.match(out.stdout, /session not found/);
 });
 
@@ -491,7 +491,7 @@ test("dispatcher: review reports early Cline exit without crashing on EPIPE", as
   });
 
   assert.equal(out.code, 1);
-  assert.match(out.stdout, /exited with code 1/);
+  assert.match(out.stdout, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
   assert.doesNotMatch(out.stderr, /EPIPE/);
 });
 
@@ -500,4 +500,49 @@ test("dispatcher: review with empty input returns without calling Cline", async 
 
   assert.equal(out.code, 0);
   assert.equal(out.stdout, "No changes to review.\n");
+});
+
+test("dispatcher: delegate writing default timeout is 600", async () => {
+  const argvPath = join(stubDir, "delegate-default-timeout-argv.json");
+  const out = await runDispatcher(["delegate", "do a thing"], {
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  const argv = JSON.parse(readFileSync(argvPath, "utf8"));
+  assert.equal(argv[argv.indexOf("-t") + 1], "600");
+});
+
+test("dispatcher: delegate --plan default timeout is 1800", async () => {
+  const argvPath = join(stubDir, "delegate-plan-timeout-argv.json");
+  const out = await runDispatcher(["delegate", "--plan", "audit the codebase"], {
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  const argv = JSON.parse(readFileSync(argvPath, "utf8"));
+  assert.equal(argv[argv.indexOf("-t") + 1], "1800");
+});
+
+test("dispatcher: review default timeout is 1800", async () => {
+  const argvPath = join(stubDir, "review-timeout-argv.json");
+  const out = await runDispatcher(["review"], {
+    input: "diff --git a/x b/x\n",
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  const argv = JSON.parse(readFileSync(argvPath, "utf8"));
+  assert.equal(argv[argv.indexOf("-t") + 1], "1800");
+});
+
+test("dispatcher: explicit --timeout overrides default for --plan", async () => {
+  const argvPath = join(stubDir, "delegate-explicit-timeout-argv.json");
+  const out = await runDispatcher(["delegate", "--plan", "--timeout", "90", "quick check"], {
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  const argv = JSON.parse(readFileSync(argvPath, "utf8"));
+  assert.equal(argv[argv.indexOf("-t") + 1], "90");
 });

@@ -9,6 +9,16 @@ const fixture = readFileSync(
   "utf8",
 );
 
+const timeoutFixture = readFileSync(
+  fileURLToPath(new URL("./fixtures/delegate-timeout.ndjson", import.meta.url)),
+  "utf8",
+);
+
+const timeoutStderr = readFileSync(
+  fileURLToPath(new URL("./fixtures/delegate-timeout.stderr.txt", import.meta.url)),
+  "utf8",
+);
+
 // A fake runner records how it was invoked and returns canned output.
 function fakeRun(result) {
   const calls = [];
@@ -57,8 +67,9 @@ test("delegate: a non-zero exit is reported, not swallowed", async () => {
   const { run } = fakeRun({ stdout: "", stderr: "auth expired", exitCode: 1 });
   const out = await delegate({ prompt: "task" }, { run });
   assert.equal(out.ok, false);
-  assert.match(out.text, /exited with code 1/);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
   assert.match(out.text, /auth expired/);
+  assert.match(out.text, /"ok":false/);
 });
 
 test("delegate: salvages a completed run from non-zero exit output", async () => {
@@ -151,7 +162,7 @@ test("delegate: reports the second transport crash after one retry", async () =>
   assert.equal(out.ok, false);
   assert.equal(calls.length, 2);
   assert.match(out.text, /^Note: cline hit a transport error \(known signature\) and the Run was retried once\./);
-  assert.match(out.text, /Cline exited with code 1/);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
   assert.match(out.text, /session not found/);
 });
 
@@ -161,7 +172,9 @@ test("delegate: non-transport failures are not retried", async () => {
 
   assert.equal(out.ok, false);
   assert.equal(calls.length, 1);
-  assert.equal(out.text, "Cline exited with code 1.\nauth expired");
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
+  assert.match(out.text, /auth expired/);
+  assert.match(out.text, /"ok":false/);
 });
 
 test("delegate: transport signatures do not retry when completed output is salvageable", async () => {
@@ -199,7 +212,7 @@ test("delegate: a non-zero exit with empty stderr falls back to stdout for the d
   const { run } = fakeRun({ stdout: "boom from stdout", stderr: "", exitCode: 3 });
   const out = await delegate({ prompt: "task" }, { run });
   assert.equal(out.ok, false);
-  assert.match(out.text, /exited with code 3/);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 3\)\*\*/);
   assert.match(out.text, /boom from stdout/);
 });
 
@@ -207,4 +220,39 @@ test("delegate: stdin context is forwarded to the runner", async () => {
   const { run, calls } = fakeRun({ stdout: fixture, stderr: "", exitCode: 0 });
   await delegate({ prompt: "review", stdin: "some diff" }, { run });
   assert.equal(calls[0].opts.input, "some diff");
+});
+
+test("delegate: timeout is classified and never retried", async () => {
+  const { run, calls } = fakeRun({
+    stdout: timeoutFixture,
+    stderr: timeoutStderr,
+    exitCode: 1,
+  });
+  const out = await delegate({ prompt: "task" }, { run });
+
+  assert.equal(out.ok, false);
+  assert.equal(calls.length, 1);
+  assert.match(out.text, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
+  assert.match(out.text, /run timed out after 5s/);
+  assert.equal(out.runMeta.transport, "timeout");
+  assert.equal(out.runMeta.retried, false);
+});
+
+test("delegate: hook-dispatch-failed with timed-out text still retries once", async () => {
+  // The real hook-dispatch crash is followed by "The operation timed out."
+  // Since timeout is last in TRANSPORT_SIGNATURES, hook-dispatch-failed wins.
+  const { run, calls } = fakeRunSequence([
+    {
+      stdout: '{"ts":"...","type":"error","message":"hook dispatch failed: session.hook requires a valid hook event payload"}',
+      stderr: "The operation timed out.",
+      exitCode: 1,
+    },
+    { stdout: fixture, stderr: "", exitCode: 0 },
+  ]);
+  const out = await delegate({ prompt: "task" }, { run });
+
+  assert.equal(out.ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(out.runMeta.transport, "hook-dispatch-failed");
+  assert.equal(out.runMeta.retried, true);
 });
