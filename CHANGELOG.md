@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0] - 2026-07-07
+
+Third-field-build follow-through (SnakeTUI v2): dispatch and reliability fixes for the failure
+modes v0.6.0's detection surfaced but didn't cure — plus guidance that the real risk is
+integration wiring, not model capability.
+
+- Fixed: the `cline:delegate` agent now backgrounds long Runs via the Bash tool's
+  `run_in_background` parameter and explicitly forbids shell `nohup`/`&`/`disown`, which the
+  harness killed at its 2-minute cap — a ~2-minute wasted-wall-clock stall that reproduced on
+  every Run in field use.
+- Fixed: a ClinePass quota/429 rejection is now classified as a non-retryable `rate-limit`
+  signature instead of being mistaken for a transient `hook-dispatch-failed` and pointlessly
+  auto-retried.
+- Fixed: the dispatcher now kills a `cline` child that hangs past the Run timeout (watchdog at
+  timeout + 120 s, and resolving even if the child never closes stdio), so a silent hang surfaces
+  as a normal timeout failure with a trailer and ledger entry instead of no output at all.
+- Changed: CLAUDE.md guidance snippet v5 — verify the artifact on every Run (a `completed`
+  trailer has come back on zero-work Runs), the real risk is integration-glue wiring caught only
+  by live end-to-end checks, and a `qwen3.7-plus` reporting-reliability caveat. Existing installs
+  get the `/cline:setup` upgrade offer.
+
 ## [0.6.0] - 2026-07-06
 
 Second-field-build follow-through (Tetris TUI): richer profile discovery, failure telemetry

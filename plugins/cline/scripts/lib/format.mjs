@@ -1,6 +1,11 @@
 // Pure rendering of an extracted Result into the markdown the command relays.
 
 const TRANSPORT_SIGNATURES = [
+  {
+    key: "rate-limit",
+    pattern: /\b429\b|reached your (weekly |monthly |daily )?clinepass limit|rate.?limit/i,
+    retryable: false,
+  },
   { key: "session-not-found", pattern: /session not found/i, retryable: true },
   { key: "hook-dispatch-failed", pattern: /hook dispatch failed/i, retryable: true },
   { key: "timeout", pattern: /timed out/i, retryable: false },

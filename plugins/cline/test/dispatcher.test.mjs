@@ -42,9 +42,29 @@ function writeTransportCrash() {
   process.stderr.write("session not found\\n");
   process.exit(1);
 }
+async function hangForever() {
+  process.on("SIGTERM", () => {});
+  process.stdin.setEncoding("utf8");
+  for await (const _chunk of process.stdin) {}
+  const { spawn } = await import("node:child_process");
+  const holdMs =
+    Number(process.env.FAKE_CLINE_HANG_CHILD_MS) > 0
+      ? Number(process.env.FAKE_CLINE_HANG_CHILD_MS)
+      : 5000;
+  const holder = spawn(
+    process.execPath,
+    ["-e", "process.on('SIGTERM',()=>{}); setTimeout(()=>process.exit(0), " + holdMs + ");"],
+    { detached: true, stdio: ["ignore", "inherit", "inherit"] },
+  );
+  holder.unref();
+  await new Promise(() => {});
+}
 if (mode === "exit-early") {
   process.stderr.write("auth expired\\n");
   process.exit(1);
+}
+if (mode === "hang") {
+  await hangForever();
 }
 if (mode === "transport-crash") {
   writeTransportCrash();
@@ -75,7 +95,7 @@ after(() => {
   if (stubDir) rmSync(stubDir, { recursive: true, force: true });
 });
 
-function runDispatcher(args, { input, env = {}, cwd } = {}) {
+function runDispatcher(args, { input, env = {}, cwd, killAfterMs } = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [dispatcherPath, ...args], {
       cwd,
@@ -94,7 +114,18 @@ function runDispatcher(args, { input, env = {}, cwd } = {}) {
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
     child.stdin.on("error", () => {});
-    child.on("close", (code) => resolve({ stdout, stderr, code }));
+    let timedOut = false;
+    const timer =
+      killAfterMs == null
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGKILL");
+          }, killAfterMs);
+    child.on("close", (code, signal) => {
+      if (timer) clearTimeout(timer);
+      resolve({ stdout, stderr, code, signal, timedOut });
+    });
     if (input) child.stdin.write(input);
     child.stdin.end();
   });
@@ -191,6 +222,47 @@ test("dispatcher: failed delegate after transport retries writes failure metadat
     assert.equal(entry.retried, true);
     assert.equal(entry.salvaged, false);
     assert.equal(entry.transport, "session-not-found");
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("dispatcher: watchdog turns a hung Cline child into a timeout failure", async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), "cline-project-watchdog-"));
+  try {
+    writeFileSync(
+      join(projectDir, ".cline-profiles.json"),
+      JSON.stringify({ profiles: [], ledger: true }),
+      "utf8",
+    );
+
+    const startedAt = Date.now();
+    const out = await runDispatcher(["delegate", "--cwd", projectDir, "--timeout", "1", "hang"], {
+      env: {
+        FAKE_CLINE_MODE: "hang",
+        FAKE_CLINE_HANG_CHILD_MS: "5000",
+        CLINE_WATCHDOG_MARGIN_MS: "200",
+        CLINE_WATCHDOG_GRACE_MS: "100",
+      },
+      killAfterMs: 5000,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(out.timedOut, false);
+    assert.equal(out.code, 1);
+    assert.equal(out.signal, null);
+    assert.ok(elapsedMs < 3500, `dispatcher should not wait for held stdio close (${elapsedMs}ms)`);
+    assert.match(out.stdout, /\*\*Cline Run FAILED \(exit 1\)\*\*/);
+    assert.match(out.stdout, /run timed out after 1s \(dispatcher watchdog killed the cline process\)/);
+    assert.match(out.stdout, /"transport":"timeout"/);
+
+    const lines = readFileSync(join(projectDir, ".cline-runs.ndjson"), "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+    assert.equal(entry.ok, false);
+    assert.equal(entry.transport, "timeout");
+    assert.equal(entry.finishReason, "timeout");
+    assert.equal(entry.retried, false);
   } finally {
     rmSync(projectDir, { recursive: true, force: true });
   }

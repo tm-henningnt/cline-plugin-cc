@@ -47,21 +47,30 @@ Hard rules:
   for a read-only Run — `--plan`/`--read-only`, and every `/cline:review` — when no explicit
   `--timeout` is given) versus what one Bash call can wait (600000 ms at time of writing):
   - **Run timeout + 60 s fits in one Bash call**: run the dispatcher as a normal foreground
-    call with the tool timeout set to Run timeout + 60 s.
+    call with the tool timeout set to Run timeout + 60 s. Do not background a
+    foreground-sized Run with `&`/`nohup` either — just run it foreground with the tool timeout
+    raised.
   - **It doesn't fit** (any `--timeout` above ~540 s under the current cap): use three phases.
     Shell variables do NOT survive between your Bash calls, so work with literal paths:
     1. Mint and note a literal path (foreground): `mktemp /tmp/cline-dispatch-XXXXXX` —
        remember the exact printed path; call it PATH below (substitute the literal string).
-    2. Start the Run (background mode):
+    2. Start the Run by setting the **Bash tool's own `run_in_background: true` parameter** on a
+       call whose command is exactly:
        `node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatcher.mjs" delegate [flags] "<task>" > PATH 2>&1; echo $? > PATH.exit`
+       **Do NOT add shell `&`, `nohup`, or `disown`** — a shell-backgrounded job inside a plain
+       (foreground) Bash call is killed by the Bash tool's ~2-minute default timeout before the
+       dispatcher finishes. `run_in_background: true` is the only mechanism that keeps the job
+       alive across your later poll calls. The command itself stays foreground within its own
+       background job, so `echo $? > PATH.exit` captures the dispatcher's real exit code.
     3. Poll (short foreground calls): `sleep 20; test -f PATH.exit && echo done || echo running`
        — repeat until `done` (fall back to the bare `test -f` if `sleep` is rejected), up to
        the Run's timeout plus 120 s of wall clock. Then `cat PATH PATH.exit` and relay as the
        result. The background job plus its polls count as ONE dispatcher invocation.
 - Never end your turn while the dispatcher may still be running, and never promise to "report
-  back later" — a finished agent cannot. If the wall-clock budget is truly exhausted, your
-  final message must say plainly: the Run's outcome is UNKNOWN, here is the literal output
-  path PATH, the orchestrator must check it and `git diff` before retrying — an unknown
+  back later" — a finished agent cannot. Poll inline in this agent; do not hand the wait to a
+  separate monitor/subagent and end your turn. If the wall-clock budget is truly exhausted,
+  your final message must say plainly: the Run's outcome is UNKNOWN, here is the literal
+  output path PATH, the orchestrator must check it and `git diff` before retrying — an unknown
   outcome is not a failure result.
 - If the harness converts your foreground call to background anyway, switch to the polling
   protocol above for that job instead of ending your turn.

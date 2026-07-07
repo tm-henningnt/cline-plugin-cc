@@ -238,6 +238,19 @@ test("delegate: timeout is classified and never retried", async () => {
   assert.equal(out.runMeta.retried, false);
 });
 
+test("delegate: ClinePass quota 429 is classified and never retried", async () => {
+  const stderr =
+    "Error 429: You have reached your weekly Clinepass limit. hook dispatch failed";
+  const { run, calls } = fakeRun({ stdout: "", stderr, exitCode: 1 });
+  const out = await delegate({ prompt: "task" }, { run });
+
+  assert.equal(out.ok, false);
+  assert.equal(calls.length, 1);
+  assert.equal(out.runMeta.transport, "rate-limit");
+  assert.equal(out.runMeta.retried, false);
+  assert.match(out.text, /"transport":"rate-limit"/);
+});
+
 test("delegate: hook-dispatch-failed with timed-out text still retries once", async () => {
   // The real hook-dispatch crash is followed by "The operation timed out."
   // Since timeout is last in TRANSPORT_SIGNATURES, hook-dispatch-failed wins.

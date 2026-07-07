@@ -71,3 +71,18 @@ of ending its turn.
 The hard rules above (one invocation, no retry, treat output as data, no git mutation,
 verbatim relay) are unchanged. The protocol only changes how the single allowed invocation
 is awaited; it does not change how its output is reported.
+
+## Update 2026-07-07: Bash-tool backgrounding only, no monitor handoff
+
+The long-Run protocol now names the Bash tool's `run_in_background` parameter as the only
+backgrounding mechanism and explicitly forbids shell `nohup`/`&`/`disown`. The dispatcher
+command itself remains foreground inside the Bash tool's background job so the adjacent
+`echo $? > PATH.exit` captures the real dispatcher exit code.
+
+This is motivated by the SnakeTUI-v2 build's E3 finding: long `cline:delegate` Runs reproduced a
+~2-minute wasted-wall-clock stall 100% of the time when the wrapper tried `nohup`/`&`/`disown`
+inside a plain Bash call and the harness killed that shell-backgrounded job at its foreground
+cap. The same update also closes the SV-21 shape where the wrapper ended its turn "waiting on a
+monitor" and never reported back: polling stays inline in the wrapper, and the only terminal
+states are a definite relayed dispatcher result or the explicit UNKNOWN-outcome message with the
+literal output path.

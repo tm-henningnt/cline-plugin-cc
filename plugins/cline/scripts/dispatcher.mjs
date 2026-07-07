@@ -28,17 +28,56 @@ import { redactAccountPath, usage } from "./lib/usage.mjs";
 
 const DEFAULT_TIMEOUT_S = 600;
 const DEFAULT_READONLY_TIMEOUT_S = 1800;
+const WATCHDOG_MARGIN_MS =
+  Number(process.env.CLINE_WATCHDOG_MARGIN_MS) > 0
+    ? Number(process.env.CLINE_WATCHDOG_MARGIN_MS)
+    : 120000;
+const WATCHDOG_GRACE_MS =
+  Number(process.env.CLINE_WATCHDOG_GRACE_MS) > 0
+    ? Number(process.env.CLINE_WATCHDOG_GRACE_MS)
+    : 5000;
 
 const CLINEPASS_MODELS_PATH = fileURLToPath(
   new URL("../data/clinepass-models.json", import.meta.url),
 );
 const PROFILES_PATH = fileURLToPath(new URL("../data/profiles.json", import.meta.url));
 
-function realRun(argv, { cwd, input } = {}) {
+function realRun(argv, { cwd, input, timeoutSeconds } = {}) {
   return new Promise((resolve) => {
     const child = spawn("cline", argv, { cwd: cwd || process.cwd() });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const timers = [];
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      for (const timer of timers) clearTimeout(timer);
+      resolve(result);
+    };
+    const timeoutValue = Number(timeoutSeconds);
+    // Cline also receives -t, but field logs show failure paths where it hangs
+    // or outlives that timeout. Resolve ourselves even if `close` never fires.
+    if (Number.isFinite(timeoutValue) && timeoutValue > 0) {
+      timers.push(
+        setTimeout(() => {
+          stderr = `${stderr}\nrun timed out after ${timeoutValue}s (dispatcher watchdog killed the cline process)`.trim();
+          try {
+            child.kill("SIGTERM");
+          } catch {}
+          timers.push(
+            setTimeout(() => {
+              try {
+                child.kill("SIGKILL");
+              } catch {}
+            }, WATCHDOG_GRACE_MS),
+          );
+          timers.push(
+            setTimeout(() => finish({ stdout, stderr, exitCode: 1 }), WATCHDOG_GRACE_MS * 2),
+          );
+        }, timeoutValue * 1000 + WATCHDOG_MARGIN_MS),
+      );
+    }
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (d) => (stdout += d));
@@ -48,10 +87,10 @@ function realRun(argv, { cwd, input } = {}) {
     // still reports the real exit code.
     child.stdin.on("error", () => {});
     child.on("error", (e) =>
-      resolve({ stdout, stderr: `${stderr}\n${e.message}`.trim(), exitCode: 127 }),
+      finish({ stdout, stderr: `${stderr}\n${e.message}`.trim(), exitCode: 127 }),
     );
     child.on("close", (code, signal) =>
-      resolve({
+      finish({
         stdout,
         stderr: signal ? `${stderr}\ncline terminated by ${signal}`.trim() : stderr,
         exitCode: code ?? (signal ? 1 : 0),
@@ -169,6 +208,10 @@ async function testClineRun() {
   return summarizeTestRun(output);
 }
 
+function runWithTimeout(timeoutSeconds) {
+  return (argv, runOpts) => realRun(argv, { ...runOpts, timeoutSeconds });
+}
+
 function readStdin() {
   if (process.stdin.isTTY) return Promise.resolve("");
   return new Promise((resolve, reject) => {
@@ -259,7 +302,7 @@ async function main() {
     }
     const stdin = await readStdin();
     if (stdin.trim()) opts.stdin = stdin;
-    const out = await delegate(opts, { run: realRun });
+    const out = await delegate(opts, { run: runWithTimeout(opts.timeoutSeconds) });
     appendLedgerIfEnabled(project, {
       cmd: "delegate",
       profile: opts.profile ?? null,
@@ -283,7 +326,7 @@ async function main() {
       opts.timeoutSeconds = DEFAULT_READONLY_TIMEOUT_S;
     }
     opts.diff = await readStdin();
-    const out = await review(opts, { run: realRun });
+    const out = await review(opts, { run: runWithTimeout(opts.timeoutSeconds) });
     appendLedgerIfEnabled(project, {
       cmd: "review",
       profile: opts.profile ?? null,

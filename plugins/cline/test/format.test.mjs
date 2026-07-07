@@ -172,6 +172,31 @@ test("transportSignature: classifies timeout error on stderr", () => {
   assert.equal(transportSignature(1, "", "{\"message\":\"run timed out after 5s\"}"), "timeout");
 });
 
+test("transportSignature: classifies ClinePass quota 429 as non-retryable rate-limit", () => {
+  const stderr =
+    "Error 429: You have reached your weekly Clinepass limit. The limit resets in 4d 8h";
+
+  assert.equal(transportSignature(1, "", stderr), "rate-limit");
+  assert.equal(isTransportRetryable(1, "", stderr), false);
+});
+
+test("transportSignature: rate-limit wins over hook dispatch envelopes", () => {
+  const stderr =
+    "Error 429: You have reached your weekly Clinepass limit. hook dispatch failed";
+
+  assert.equal(transportSignature(1, "", stderr), "rate-limit");
+  assert.equal(isTransportRetryable(1, "", stderr), false);
+});
+
+test("transportSignature: existing transport signatures keep retry behavior", () => {
+  assert.equal(transportSignature(1, "", "hook dispatch failed"), "hook-dispatch-failed");
+  assert.equal(isTransportRetryable(1, "", "hook dispatch failed"), true);
+  assert.equal(transportSignature(1, "", "session not found"), "session-not-found");
+  assert.equal(isTransportRetryable(1, "", "session not found"), true);
+  assert.equal(transportSignature(1, "", "run timed out after 5s"), "timeout");
+  assert.equal(isTransportRetryable(1, "", "run timed out after 5s"), false);
+});
+
 test("transportSignature: hook-dispatch-failed wins over timeout when combined", () => {
   // Real crash: hook dispatch failed line followed by "The operation timed out."
   // timeout is last in the table, so hook-dispatch-failed wins.

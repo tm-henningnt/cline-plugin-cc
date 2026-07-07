@@ -76,7 +76,7 @@ project's or global `CLAUDE.md`:
 
 ```markdown
 ## Cline delegation
-<!-- cline-plugin guidance v4 — managed section; /cline:setup offers updates -->
+<!-- cline-plugin guidance v5 — managed section; /cline:setup offers updates -->
 
 This machine has the cline plugin. When orchestrating multi-step work, prefer handing
 well-scoped, self-contained implementation steps (boilerplate, renames, test scaffolding,
@@ -104,12 +104,16 @@ subscription instead of the session budget:
 - Profile guidance (ClinePass's own): `kimi-k2.7-code` coding, `deepseek-v4-flash` fast
   iteration, `deepseek-v4-pro` large changes, `glm-5.2` deep reasoning, `kimi-k2.6` agentic
   workflows, `qwen3.7-max` heavy workloads. All flat-rate, but heavier models drain the
-  rate-limit windows faster.
+  rate-limit windows faster — `qwen3.7-plus` has shown flaky *reporting* (zero-work
+  greetings, missing final reports) in field use; verify its Runs extra carefully.
 - It edits the working tree directly and never commits — review its diff before building on it.
-- A failed Run may contain finished work: when a Run self-reports failure (timeout, transport
-  crash), check the working tree before discarding — a timed-out Run may have already written
-  a complete, correct diff. Don't reflexively discard a Run just because it self-reports
-  failure (the Run output says when tool calls were recorded).
+- Verify the artifact on EVERY Run — the trailer is never proof of work.
+  `finishReason:"completed"` has come back on Runs that did nothing (a "Hello, how can I
+  help?" greeting, clean tree), on Runs that did real work but relayed no acceptance output,
+  and on Runs that finished with no report at all; conversely a Run that self-reports failure
+  (timeout, transport crash) may already hold a complete, correct diff. On every Run — pass,
+  fail, or silent — check `git status`/`git diff` and re-run the acceptance commands yourself;
+  if a Run seems to vanish, check the tree directly rather than waiting indefinitely.
 - When running several writing Runs concurrently, use per-Run `git worktree`s (`--cwd` into
   each worktree) — shared-tree parallel Runs produce diff-attribution confusion and
   self-flagged false alarms. Worktrees checked out from the same base commit are mutually
@@ -118,6 +122,11 @@ subscription instead of the session budget:
   "fails in this environment" and swaps in an "equivalent" one, or whose sandbox lacks a
   capability the test depends on, verify the actual mechanism, not just the reported exit
   code.
+- In a multi-module build the risk is wiring, not reasoning: hard algorithms land correct;
+  the defects that survive are integration-glue — a callee gained a required call and one
+  call site wasn't updated, a flag never wired, a constructor step never called. These are
+  invisible to unit tests and self-reports — verify the seams live end-to-end (drive the real
+  CLI / two real processes / the real entry point), not just the per-module unit tests.
 - Heavy tasks need an explicit `--timeout`: the 600 s default caused false-failure timeouts;
   `--timeout 1200` or `--timeout 1800` cleanly handles UI-heavy or long-running tasks. Add
   `--timeout` on any task shape that previously timed out.

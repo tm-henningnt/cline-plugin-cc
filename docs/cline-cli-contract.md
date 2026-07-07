@@ -51,6 +51,14 @@ across two different profiles (2× `glm-5.2`, 2× `kimi-k2.6`) — enough to ret
 issue, not tied to one model provider. Across both builds, roughly 40% of Runs crashed with
 one of these signatures, solo and concurrent alike.
 
+A separate quota/429 rejection is classified as non-retryable `rate-limit`, not as a transient
+transport crash. Field text observed: `Error 429: You have reached your weekly Clinepass limit.
+The limit resets in 4d 8h, please try again later.` This signature is ordered ahead of
+`hook-dispatch-failed` because the quota payload can arrive wrapped in a hook-dispatch envelope;
+retrying a quota error is pointless until the reset window advances. The pattern is built from
+the quoted field text and should be re-verified against a real capture when the quota next
+resets.
+
 On the hook-dispatch error path, the Run dies at ~600–604 s even with `--timeout 1800` set.
 The plugin passes `-t 1800` correctly (`buildDelegateArgv` appends `-t <seconds>` verbatim),
 so the ~600 s death is cline-internal — worth asking upstream whether this error path has
@@ -90,6 +98,11 @@ When the `--json` CLI run is killed with `-t <seconds>`:
   retried (the Run already ran to its time limit; re-running would burn
   another full window with the same risk). The ledger records
   `finishReason: "timeout"` for these Runs.
+- **Dispatcher watchdog**: the dispatcher also arms a watchdog at the Run timeout + 120 s. If a
+  `cline` child hangs, outlives its own `-t`, or leaves stdio wedged, the watchdog sends
+  SIGTERM, escalates to SIGKILL, and resolves anyway even if `close` never fires. That turns the
+  observed "no process, no output, no ledger entry past the timeout" shape into an ordinary
+  `transport:"timeout"` failure with a trailer and ledger line instead of infinite silence.
 
 ## Providers: ClinePass is `cline-pass`, not `cline`
 
