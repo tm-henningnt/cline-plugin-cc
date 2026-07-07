@@ -228,6 +228,27 @@ subscription instead of the session budget:
 `/cline:setup` will offer to add this for you if it isn't already installed (it detects the
 managed section by its marker, not by keyword).
 
+## Field Testing
+
+As part of developing this plugin, we stress-tested the delegation workflow by building two public
+game repositories:
+
+- [Snake](https://github.com/tm-henningnt/cline-plugin-snake)
+- [Tetris](https://github.com/tm-henningnt/cline-plugin-tetris)
+
+Both games were built in two phases: first as a terminal UI with simple gameplay, then as a v2
+with more advanced features such as bot play, local and network multiplayer, and a GUI.
+
+Across those builds, Cline did most of the implementation work. The Claude Code/Codex side mostly
+acted as an escalation point when Cline models failed or got stuck. Sonnet 5 orchestrated the work,
+while Opus 4.8 and Fable 5 were the primary reviewers for most Runs; GLM 5.2 occasionally reviewed
+instead. Only in a few cases did the orchestrator or reviewer need to step in and complete a build.
+
+Overall, the workflow produced working code cheaply, with Codex/Claude intervention rarely needed
+and Opus/Fable generally satisfied with the resulting code quality. The exercise also exposed a
+number of sharp edges in the plugin, which fed back into the model guidance and the delegation
+checks documented above.
+
 ## Architecture
 
 Each command is a thin Markdown wrapper around `plugins/cline/scripts/dispatcher.mjs`, which shells
