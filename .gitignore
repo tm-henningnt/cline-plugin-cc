@@ -4,3 +4,4 @@ plans/
 # Local Run ledger
 .cline-runs.ndjson
 .cline-profiles.json
+.DS_Store

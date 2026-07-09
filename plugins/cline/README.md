@@ -26,6 +26,9 @@ to make Claude delegate autonomously. Use `/cline:profiles` to list model profil
   (default 1800), `--cwd <path>`.
 - `/cline:usage` — ClinePass balance and recent usage.
 - `/cline:profiles` — list every available profile with its target and source (read-only).
+- `/cline:model-feed <subcommand>` — configure and query a user-provided Model Discovery Feed,
+  then dry-run or write selected offerings into project-local Profiles. Hidden from model
+  invocation because it can use a private feed API key and write `.cline-profiles.json`.
 - `/cline:setup [--refresh-models]` — health check: CLI install, sign-in, the model plugin Runs
   will use, available profiles, and a tiny validation Run.
 
@@ -67,6 +70,34 @@ enabled, each delegate/review Run appends one telemetry-only line to `.cline-run
 the config, and `/cline:usage` includes a Local Run ledger rollup. The ledger never stores task
 text, prompts, diffs, or Result summaries; gitignore it unless the project intentionally shares
 local run telemetry.
+
+## Model Feed helper
+
+`/cline:model-feed` consumes a user-provided Model Discovery Feed and suggests Profile candidates
+for common routing decisions:
+
+- `help`
+- `setup --base-url <url> --no-api-key`
+- `setup --base-url <url> --api-key-env MODEL_FEED_API_KEY`
+- explicit local secret-file setup from a terminal with `--api-key-stdin` or
+  `--api-key-file <path>`; env-var setup is preferred from the slash command
+- `status`
+- `free-coding [--freeish] [--profileable]`
+- `cheapest --q <text>` or `cheapest --canonical-model <id>`
+- `suggest "<wish or gap>"`
+- `profile add --candidate <feed-model-id> --name <profile-name> [--write]`
+
+Any feed that conforms to the Model Discovery Feed spec works. For a deploy-your-own reference
+implementation, see https://github.com/tm-henningnt/model-discovery-feed. The helper does not
+provide or assume a hosted feed, so setup stays on `--base-url <your-feed-base-url>`.
+
+Advanced non-standard deployments can use `--feed-url <url>` with explicit `--status-url <url>`
+and `--schema-url <url>` when those endpoints are not under `/v1/`.
+
+The helper never bundles a feed endpoint or API key. Feed keys authenticate only the discovery
+feed; provider calls still require the user's own provider credentials in Cline. Profile writes
+are project-local, dry-run by default, and preserve existing `.cline-profiles.json` settings such
+as the local Run ledger.
 
 ## Recommended CLAUDE.md guidance
 

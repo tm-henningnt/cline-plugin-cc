@@ -138,6 +138,39 @@ https://app.cline.bot/dashboard/subscription
 Lists every available profile with its provider/model target and source. Read-only; spends
 nothing.
 
+### `/cline:model-feed <subcommand> [flags]`
+
+Configures and queries a user-provided Model Discovery Feed, then turns selected model offerings
+into project-local Profiles. The command is hidden from model invocation because it can use a
+private feed API key and can write `.cline-profiles.json`.
+
+Common flows:
+
+- `help` prints the terminal usage summary.
+- `setup --base-url <url> --no-api-key` configures an unauthenticated feed.
+- `setup --base-url <url> --api-key-env MODEL_FEED_API_KEY` stores only the environment variable
+  name; the key itself stays out of plugin config and project files.
+- For explicit local secret-file storage, run the dispatcher from a terminal with
+  `--api-key-stdin` or `--api-key-file <path>`; prefer env-var mode from the slash command.
+- `status` shows feed config, cache age, freshness, and collector health.
+- `free-coding [--freeish] [--profileable]` lists currently-free coding Profile candidates.
+- `cheapest --q <text>` or `cheapest --canonical-model <id>` ranks comparable offerings by cost.
+- `suggest "<wish or gap>"` deterministically maps known terms to feed criteria and explains any
+  unparsed terms.
+- `profile add --candidate <feed-model-id> --name <profile-name>` dry-runs a Profile entry;
+  add `--write` to update `.cline-profiles.json`.
+
+Any feed that conforms to the Model Discovery Feed spec works. For a deploy-your-own reference
+implementation, see https://github.com/tm-henningnt/model-discovery-feed. The plugin does not
+provide or assume a hosted feed, so setup stays on `--base-url <your-feed-base-url>`.
+
+Advanced non-standard deployments can use `--feed-url <url>` with explicit `--status-url <url>`
+and `--schema-url <url>` when those endpoints are not under `/v1/`.
+
+The feed base URL and optional feed API key are always user-provided; the plugin bundles no feed
+endpoint or key. Feed keys are feed authentication only: they are never passed to Cline or to a
+provider API, and adding a Profile does not configure provider credentials.
+
 ### `/cline:setup [--refresh-models]`
 
 Checks:

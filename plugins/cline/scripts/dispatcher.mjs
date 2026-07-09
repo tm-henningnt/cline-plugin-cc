@@ -15,6 +15,7 @@ import { selectClineAuth } from "./lib/auth.mjs";
 import { parseDelegateArgs, parseReviewArgs, tokenize } from "./lib/argv.mjs";
 import { delegate } from "./lib/delegate.mjs";
 import { buildLedgerEntry } from "./lib/ledger.mjs";
+import { handleModelFeed } from "./lib/model-feed.mjs";
 import { review } from "./lib/review.mjs";
 import {
   formatProfilesReport,
@@ -144,6 +145,33 @@ async function realFetchText(url) {
   }
 
   return response.text();
+}
+
+async function realModelFeedFetchJson(url, { headers = {} } = {}) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      ...headers,
+    },
+  });
+
+  const result = {
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+    headers: {
+      etag: response.headers.get("ETag"),
+      lastModified: response.headers.get("Last-Modified"),
+    },
+    body: null,
+  };
+  if (response.status === 304) return result;
+  try {
+    result.body = await response.json();
+  } catch {
+    result.body = null;
+  }
+  return result;
 }
 
 function readStoredClineAuth() {
@@ -391,6 +419,16 @@ async function main() {
     });
     process.stdout.write(out + "\n");
     process.exit(0);
+  }
+
+  if (subcommand === "model-feed") {
+    const args = rest.length === 1 ? tokenize(rest[0]) : rest;
+    const stdin = await readStdin();
+    const out = await handleModelFeed(args, { stdin, nowIso: new Date().toISOString() }, {
+      fetchJson: realModelFeedFetchJson,
+    });
+    process.stdout.write(out.text + "\n");
+    process.exit(out.ok ? 0 : 1);
   }
 
   process.stdout.write(`Unknown subcommand: ${subcommand ?? "(none)"}\n`);

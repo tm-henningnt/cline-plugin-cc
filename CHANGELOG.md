@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0] - 2026-07-09
+
+Model Discovery Feed helper for creating project-local Profiles from a user-provided feed.
+
+- Added: `/cline:model-feed` (hidden from model invocation) can configure a user-provided Model
+  Discovery Feed, check status, list strict currently-free coding candidates, rank cheapest
+  comparable offerings, turn deterministic wish/gap text into suggestions, and dry-run or write
+  selected candidates into `.cline-profiles.json`.
+- Security: the feed base URL and optional feed API key are never bundled. Feed keys can be read
+  from an environment variable or explicit local secret file, are redacted from output, and are
+  never written to project Profiles or cache files.
+- Added: ETag-aware feed caching with `304` reuse and stale-cache fallback for read-only
+  discovery, plus strict `schema_version === "1.0.0"` validation while ignoring unknown fields.
+
 ## [0.7.0] - 2026-07-07
 
 Third-field-build follow-through (SnakeTUI v2): dispatch and reliability fixes for the failure

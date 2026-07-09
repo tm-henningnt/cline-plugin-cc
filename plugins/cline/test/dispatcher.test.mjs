@@ -138,6 +138,39 @@ test("dispatcher: unknown subcommand exits with usage error", async () => {
   assert.match(out.stdout, /Unknown subcommand/);
 });
 
+test("dispatcher: model-feed status reports setup required without touching Cline", async () => {
+  const configDir = mkdtempSync(join(tmpdir(), "cline-model-feed-dispatcher-"));
+  const argvPath = join(stubDir, "model-feed-status-argv.json");
+  try {
+    const out = await runDispatcher(["model-feed", "status"], {
+      env: {
+        CLINE_MODEL_FEED_CONFIG: join(configDir, "model-feed.json"),
+        FAKE_CLINE_ARGV_PATH: argvPath,
+      },
+    });
+
+    assert.equal(out.code, 0);
+    assert.match(out.stdout, /Model Feed Status/);
+    assert.match(out.stdout, /Setup: required/);
+    assert.equal(existsSync(argvPath), false);
+  } finally {
+    rmSync(configDir, { recursive: true, force: true });
+  }
+});
+
+test("dispatcher: model-feed help exits cleanly without touching Cline", async () => {
+  const argvPath = join(stubDir, "model-feed-help-argv.json");
+  const out = await runDispatcher(["model-feed", "help"], {
+    env: {
+      FAKE_CLINE_ARGV_PATH: argvPath,
+    },
+  });
+
+  assert.equal(out.code, 0);
+  assert.match(out.stdout, /\*\*Model Feed Help\*\*/);
+  assert.equal(existsSync(argvPath), false);
+});
+
 test("dispatcher: delegate without a prompt exits with usage error", async () => {
   const out = await runDispatcher(["delegate"]);
 
