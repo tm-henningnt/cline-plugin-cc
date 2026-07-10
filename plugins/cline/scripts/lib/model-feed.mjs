@@ -828,7 +828,12 @@ function buildProfileEntry(row, args) {
   const provider = args.provider ?? row.profile.provider;
   const model = args.model ?? row.profile.model;
   if (!provider || !model) {
-    return { ok: false, text: `Candidate ${row.id} is not profileable: ${row.profile.reason}. Supply --provider and --model to override.` };
+    const missing = [!provider && "--provider <id>", !model && "--model <id>"].filter(Boolean).join(" and ");
+    const modelHint = row.providerModelId ? ` The candidate's own model id is likely ${code(row.providerModelId)}.` : "";
+    return {
+      ok: false,
+      text: `Candidate ${row.id} is not profileable: ${row.profile.reason}. Supply ${missing} to override (the plugin never guesses provider auth for you).${modelHint}`,
+    };
   }
   return {
     ok: true,
@@ -1142,8 +1147,15 @@ function renderModelFeedHelp() {
       "- `cheapest --canonical-model <id>`",
       "- `suggest \"<wish or gap>\"`",
       "- `profile add --candidate <id> --name <name> [--write]`",
+      "- `profile add --candidate <id> --name <name> --provider <id> --model <id> [--write]` for",
+      "  candidates a plain `profile add` reports as \"not profileable\" (common for OpenRouter and",
+      "  other custom-base-URL providers) — the error names exactly which of `--provider`/`--model`",
+      "  is missing and suggests the likely `--model` value from the candidate's own id.",
       "",
-      "Feed base URL and API key are user-provided; provider credentials are separate.",
+      "Feed base URL and API key are user-provided; provider credentials are separate. This plugin",
+      "never configures Cline provider auth for you — it assumes the provider (e.g. `openrouter`) is",
+      "already authenticated in Cline, and the surest way to confirm a profile actually works is a",
+      "real `/cline:delegate --profile <name> --plan \"...\"` run, not a config inspection.",
       "A deploy-your-own reference implementation lives at https://github.com/tm-henningnt/model-discovery-feed.",
     ].join("\n"),
   };

@@ -178,6 +178,28 @@ test("dispatcher: delegate without a prompt exits with usage error", async () =>
   assert.match(out.stdout, /No task given/);
 });
 
+test("dispatcher: delegate --help prints usage and never spawns cline", async () => {
+  const argvPath = join(stubDir, "delegate-help-argv.json");
+  const out = await runDispatcher(["delegate", "--help"], {
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  assert.match(out.stdout, /Usage: \/cline:delegate/);
+  assert.equal(existsSync(argvPath), false);
+});
+
+test("dispatcher: review --help prints usage and never spawns cline", async () => {
+  const argvPath = join(stubDir, "review-help-argv.json");
+  const out = await runDispatcher(["review", "--help"], {
+    env: { FAKE_CLINE_ARGV_PATH: argvPath },
+  });
+
+  assert.equal(out.code, 0);
+  assert.match(out.stdout, /Usage: \/cline:review/);
+  assert.equal(existsSync(argvPath), false);
+});
+
 test("dispatcher: delegate returns a successful Cline run summary", async () => {
   const out = await runDispatcher(["delegate", "make hello"]);
 

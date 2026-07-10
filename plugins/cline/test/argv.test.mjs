@@ -137,3 +137,26 @@ test("parseReviewArgs: ignores unknown tokens without collecting a prompt", () =
 test("parseReviewArgs: accepts cwd", () => {
   assert.deepEqual(parseReviewArgs(["--cwd", "/repo"]), { cwd: "/repo" });
 });
+
+test("parseDelegateArgs: --help is a flag, not a leaked prompt (array form)", () => {
+  const opts = parseDelegateArgs(["--help"]);
+  assert.equal(opts.help, true);
+  assert.equal(opts.prompt, "");
+});
+
+test("parseDelegateArgs: --help is a flag, not a leaked prompt (raw string form)", () => {
+  const opts = parseDelegateArgs("--help");
+  assert.equal(opts.help, true);
+  assert.equal(opts.prompt, "");
+});
+
+test("parseDelegateArgs: -h is recognized the same as --help", () => {
+  const opts = parseDelegateArgs(["-h"]);
+  assert.equal(opts.help, true);
+  assert.equal(opts.prompt, "");
+});
+
+test("parseReviewArgs: --help is recognized as a flag", () => {
+  const opts = parseReviewArgs(["--help"]);
+  assert.equal(opts.help, true);
+});

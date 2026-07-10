@@ -47,6 +47,8 @@ const FLAGS_WITH_VALUE = new Map([
 const BOOLEAN_FLAGS = new Map([
   ["--plan", "plan"],
   ["--read-only", "readOnly"],
+  ["--help", "help"],
+  ["-h", "help"],
 ]);
 
 const REVIEW_FLAGS_WITH_VALUE = new Map([
@@ -56,6 +58,11 @@ const REVIEW_FLAGS_WITH_VALUE = new Map([
   ["--provider", "provider"],
   ["--timeout", "timeoutSeconds"],
   ["--cwd", "cwd"],
+]);
+
+const REVIEW_BOOLEAN_FLAGS = new Map([
+  ["--help", "help"],
+  ["-h", "help"],
 ]);
 
 function normalizeArgTokens(argvOrString) {
@@ -163,7 +170,7 @@ export function parseDelegateArgs(argvOrString) {
 
 export function parseReviewArgs(argvOrString) {
   const tokens = normalizeArgTokens(argvOrString);
-  const { opts } = consumeFlags(tokens, REVIEW_FLAGS_WITH_VALUE, new Map(), {
+  const { opts } = consumeFlags(tokens, REVIEW_FLAGS_WITH_VALUE, REVIEW_BOOLEAN_FLAGS, {
     stopAtFirstNonFlag: false,
   });
   return opts;

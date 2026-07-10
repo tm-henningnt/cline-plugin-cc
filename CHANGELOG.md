@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.1] - 2026-07-10
+
+Safety fix and Model Feed friction reduction found while dogfooding profile creation for free
+models.
+
+- Fixed: `/cline:delegate --help` and `/cline:review --help` (or a bare `-h`) previously fell
+  through the argv parser's "everything after the first unrecognized token is the task prompt"
+  rule and silently launched a real, write-enabled Cline Run with `--help` as the task instead of
+  printing usage. Both flags are now recognized before prompt-parsing and short-circuit to a
+  usage line with no `cline` process spawned.
+- Changed: `model-feed profile add` on a "not profileable" candidate (the common case for
+  OpenRouter and other custom-base-URL providers) now names exactly which of `--provider`/`--model`
+  is actually missing — most candidates already resolve a provider — and suggests the likely
+  `--model` value from the candidate's own id, instead of a blanket "supply --provider and
+  --model".
+- Docs: `/cline:model-feed` help and `commands/model-feed.md` now spell out the
+  not-profileable → explicit `--provider`/`--model` override pattern upfront, clarify that this
+  plugin never configures or inspects Cline's own provider auth (verify a profile with a real
+  `--plan` Run instead), and note OpenRouter's documented `:free`-model limits (20 req/min; 50 or
+  1000 req/day depending on purchased credits) so a rate-limited Run isn't mistaken for a broken
+  profile.
+
 ## [0.8.0] - 2026-07-09
 
 Model Discovery Feed helper for creating project-local Profiles from a user-provided feed.

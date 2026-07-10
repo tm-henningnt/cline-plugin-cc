@@ -314,6 +314,12 @@ async function main() {
 
   if (subcommand === "delegate") {
     const opts = parseDelegateArgs(rest);
+    if (opts.help) {
+      process.stdout.write(
+        'Usage: /cline:delegate [--model <id>] [--profile <name>] [--provider <id>] [--plan] [--read-only] [--timeout <s>] [--cwd <path>] "<task>"\n',
+      );
+      process.exit(0);
+    }
     if (!opts.prompt) {
       process.stdout.write("No task given. Usage: /cline:delegate \"<task>\"\n");
       process.exit(2);
@@ -344,6 +350,12 @@ async function main() {
 
   if (subcommand === "review") {
     const opts = parseReviewArgs(rest);
+    if (opts.help) {
+      process.stdout.write(
+        "Usage: /cline:review [--base <ref>] [--model <id>] [--profile <name>] [--provider <id>] [--timeout <s>] [--cwd <path>]\n",
+      );
+      process.exit(0);
+    }
     if (!opts.cwd) opts.cwd = process.cwd();
     const project = findProjectProfiles(opts.cwd);
     applyProfileOrExit(opts, project);
