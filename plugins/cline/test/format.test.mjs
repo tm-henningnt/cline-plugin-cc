@@ -338,3 +338,42 @@ test("formatResult: success trailer omits token fields when absent", () => {
   assert.equal("inputTokens" in parsed, false);
   assert.equal("outputTokens" in parsed, false);
 });
+
+test("transportSignature: classifies stall watchdog as stalled and non-retryable", () => {
+  const stderr = "no output from cline within 180s (dispatcher stall watchdog killed the cline process)";
+  assert.equal(transportSignature(1, "", stderr), "stalled");
+  assert.equal(isTransportRetryable(1, "", stderr), false);
+});
+
+test("transportSignature: stalled wins over timeout when both phrases appear", () => {
+  const stderr =
+    "no output from cline within 180s (dispatcher stall watchdog killed the cline process) run timed out after 600s";
+  assert.equal(transportSignature(1, "", stderr), "stalled");
+});
+
+test("formatResult: success trailer includes runId when annotated", () => {
+  const text = formatResult({ finishReason: "completed", model: "m" }, { runId: "abc12345" });
+  const parsed = parseTrailer(text);
+  assert.equal(parsed.runId, "abc12345");
+});
+
+test("formatResult: success trailer omits runId when annotation absent", () => {
+  const text = formatResult({ finishReason: "completed", model: "m" });
+  const parsed = parseTrailer(text);
+  assert.equal("runId" in parsed, false);
+});
+
+test("buildFailureTelemetry: includes runId when annotated", () => {
+  const telemetry = buildFailureTelemetry(1, { transport: "stalled", runId: "abc12345" });
+  assert.deepEqual(telemetry, {
+    ok: false,
+    exitCode: 1,
+    transport: "stalled",
+    runId: "abc12345",
+  });
+});
+
+test("buildFailureTelemetry: omits runId when annotation absent", () => {
+  const telemetry = buildFailureTelemetry(1, { transport: "timeout" });
+  assert.equal("runId" in telemetry, false);
+});

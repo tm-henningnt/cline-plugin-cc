@@ -7,5 +7,5 @@ import { executeRun } from "./attempt.mjs";
 // deps.run(argv, { cwd, input }) -> { stdout, stderr, exitCode }
 export async function delegate(opts, deps) {
   const argv = buildDelegateArgv(opts);
-  return executeRun(argv, { cwd: opts.cwd, input: opts.stdin }, deps);
+  return executeRun(argv, { cwd: opts.cwd, input: opts.stdin, runId: opts.runId }, deps);
 }

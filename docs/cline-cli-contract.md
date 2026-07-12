@@ -72,6 +72,11 @@ if stdout contains a completed `run_result`, the completed Result is salvaged ev
 exits non-zero; otherwise, a Run with one of these signatures is retried once and the retry is
 called out visibly in the relayed output. Other failures are not retried.
 
+A new `stalled` signature is produced by the dispatcher itself when a child emits no output
+within a startup window (see "Dispatch liveness" below). It is non-retryable: a systemic
+zero-output stall will likely reproduce immediately, so the orchestration should serialize
+dispatches rather than retry.
+
 Note that a retried writing Run re-executes the full task on a working tree that may already
 contain the first attempt's partial writes; Cline generally converges on the existing work, but
 the reviewed diff can be the union of both attempts.
@@ -104,6 +109,30 @@ When the `--json` CLI run is killed with `-t <seconds>`:
   observed "no process, no output, no ledger entry past the timeout" shape into an ordinary
   `transport:"timeout"` failure with a trailer and ledger line instead of infinite silence.
 
+## Dispatch liveness
+
+Every `delegate` and `review` dispatch now prints observability lines:
+
+- **Start banner**: the first line of stdout is `cline-dispatch: {...}` JSON containing the
+  dispatch-scoped `runId`, timestamp, dispatcher pid, `cmd` (`delegate` or `review`), effective
+  `profile`/`provider`/`model`, `cwd`, effective `timeoutSeconds`, and current `gitBranch`.
+  This line appears before the `cline` subprocess spawns, so a Run is attributable from its
+  first millisecond. It is omitted for `--help`, `usage`, `setup`, `profiles`, and `model-feed`.
+- **Heartbeats**: while the child is alive, the dispatcher writes one JSON line per interval to
+  its own stderr (not to the child's captured stderr):
+  `cline-dispatch: {"heartbeat":true,"elapsedS":<s>,"stdoutBytes":<n>,"events":<n>}`.
+  The default interval is 30 s; set `CLINE_HEARTBEAT_MS=0` to disable, or override with
+  `CLINE_HEARTBEAT_MS`.
+- **Stall watchdog**: if the child produces no output on either stream within
+  `CLINE_STALL_TIMEOUT_MS` (default 180 s), the dispatcher kills it and classifies the Run as
+  non-retryable `transport:"stalled"`. The injected stderr text contains `stall watchdog` and
+  deliberately avoids `timed out` so the signature is unambiguous. The watchdog only arms when
+  the main timeout watchdog would fire later; it is disabled for timeout-less paths such as
+  `--version` and the setup validation Run.
+- **`runId`**: a short UUID generated at dispatch time, shared across a transport retry. It
+  appears in the start banner, the `cline-run:` trailer, and the ledger entry, making it the
+  attribution anchor for a dispatch.
+
 ## Providers: ClinePass is `cline-pass`, not `cline`
 
 Empirically confirmed on a real account: `~/.cline/data/settings/providers.json` holds separate
@@ -114,6 +143,35 @@ subscription. The CLI's own default provider is `cline` — which is why delegat
 pass `-P cline-pass` explicitly (ADR-0002).
 
 There is **no programmatic model list endpoint** (REST `/models` 404s; `cline config --json` requires a TTY). However, each Run's `run_result.model.info` carries per-model `pricing` and `contextWindow`, which is where `/cline:profiles`' pricing data was harvested from (dated by the bundle's `pricingAsOf`, preserved across `--refresh-models`). The bundled `plugins/cline/data/clinepass-models.json` snapshot is scraped from the ClinePass docs and refreshed via `/cline:setup --refresh-models`.
+
+## Project-local profile resolution
+
+The plugin resolves `.cline-profiles.json` (project-local profiles + ledger opt-in) in the
+following order, first-match-wins:
+
+1. **Explicit `--profiles-file <path>`** (delegate/review only). Fails closed: a missing or
+   malformed file exits 2 before spawning `cline`.
+2. **Upward walk from `--cwd`** (or `process.cwd()` when `--cwd` is not set). The resolver walks
+   parent directories looking for `.cline-profiles.json`. An unreadable file at the first match
+   still fails closed when `--profile` is used.
+3. **Worktree fallback** — when `--cwd` is inside a **linked `git worktree`** and step 2 found
+   nothing. The fallback detects the worktree by reading the `.git` file (a file, not a
+   directory, pointing at `.../worktrees/<name>`), resolves the main working tree root via the
+   `commondir` file, and walks from there. This is pure filesystem logic — no `git` subprocess,
+   preserving the zero-runtime-dependency rule.
+   - The fallback deliberately excludes submodule layouts (`.git/modules/<name>` paths do not
+     contain `/worktrees/`).
+   - A worktree-local `.cline-profiles.json` (including a malformed one) **always beats** the
+     main checkout's file, because step 2 finds it before the fallback activates.
+4. **No profiles file found** → `project` is `null`; `--profile` lists only bundled profiles and
+   ClinePass model names.
+
+The **ledger** (`.cline-runs.ndjson`) is appended next to whichever profiles file was used
+(`project.dir`):
+- Beside an explicit `--profiles-file`.
+- Beside a worktree-local profiles file.
+- At the **main checkout** when the worktree fallback resolved the file — which means ledger
+  telemetry survives worktree deletion. This is intentional.
 
 ## Auth
 

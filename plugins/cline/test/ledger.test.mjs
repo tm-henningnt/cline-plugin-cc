@@ -261,3 +261,45 @@ test("buildLedgerEntry: non-timeout transport leaves finishReason absent", () =>
   assert.equal(entry.transport, "session-not-found");
   assert.equal("finishReason" in entry, false);
 });
+
+test("buildLedgerEntry: records runId from opts", () => {
+  const entry = buildLedgerEntry({
+    cmd: "delegate",
+    profile: "quick",
+    opts: { provider: "cline-pass", model: "cline-pass/deepseek-v4-flash", runId: "abc12345" },
+    out: {
+      ok: true,
+      runMeta: {
+        exitCode: 0,
+        retried: false,
+        salvaged: false,
+        transport: null,
+      },
+    },
+    nowIso: NOW,
+  });
+
+  assert.equal(entry.runId, "abc12345");
+});
+
+test("buildLedgerEntry: stalled transport sets finishReason to stalled", () => {
+  const entry = buildLedgerEntry({
+    cmd: "delegate",
+    profile: "quick",
+    opts: { provider: "cline-pass", model: "cline-pass/deepseek-v4-pro" },
+    out: {
+      ok: false,
+      runMeta: {
+        exitCode: 1,
+        retried: false,
+        salvaged: false,
+        transport: "stalled",
+      },
+    },
+    nowIso: NOW,
+  });
+
+  assert.equal(entry.ok, false);
+  assert.equal(entry.transport, "stalled");
+  assert.equal(entry.finishReason, "stalled");
+});

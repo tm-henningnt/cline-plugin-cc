@@ -7,7 +7,8 @@
 // ./lib/*.mjs behind injected seams and is unit-tested there.
 
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +38,14 @@ const WATCHDOG_GRACE_MS =
   Number(process.env.CLINE_WATCHDOG_GRACE_MS) > 0
     ? Number(process.env.CLINE_WATCHDOG_GRACE_MS)
     : 5000;
+const STALL_TIMEOUT_MS =
+  Number(process.env.CLINE_STALL_TIMEOUT_MS) > 0
+    ? Number(process.env.CLINE_STALL_TIMEOUT_MS)
+    : 180000;
+const HEARTBEAT_INTERVAL_MS =
+  Number(process.env.CLINE_HEARTBEAT_MS) >= 0
+    ? Number(process.env.CLINE_HEARTBEAT_MS)
+    : 30000;
 
 const CLINEPASS_MODELS_PATH = fileURLToPath(
   new URL("../data/clinepass-models.json", import.meta.url),
@@ -49,40 +58,72 @@ function realRun(argv, { cwd, input, timeoutSeconds } = {}) {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let heartbeat = null;
     const timers = [];
     const finish = (result) => {
       if (settled) return;
       settled = true;
       for (const timer of timers) clearTimeout(timer);
+      if (heartbeat) clearInterval(heartbeat);
       resolve(result);
+    };
+    const killLadder = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+      timers.push(
+        setTimeout(() => {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+        }, WATCHDOG_GRACE_MS),
+      );
+      timers.push(
+        setTimeout(() => finish({ stdout, stderr, exitCode: 1 }), WATCHDOG_GRACE_MS * 2),
+      );
     };
     const timeoutValue = Number(timeoutSeconds);
     // Cline also receives -t, but field logs show failure paths where it hangs
     // or outlives that timeout. Resolve ourselves even if `close` never fires.
+    let sawOutput = false;
     if (Number.isFinite(timeoutValue) && timeoutValue > 0) {
       timers.push(
         setTimeout(() => {
           stderr = `${stderr}\nrun timed out after ${timeoutValue}s (dispatcher watchdog killed the cline process)`.trim();
-          try {
-            child.kill("SIGTERM");
-          } catch {}
-          timers.push(
-            setTimeout(() => {
-              try {
-                child.kill("SIGKILL");
-              } catch {}
-            }, WATCHDOG_GRACE_MS),
-          );
-          timers.push(
-            setTimeout(() => finish({ stdout, stderr, exitCode: 1 }), WATCHDOG_GRACE_MS * 2),
-          );
+          killLadder();
         }, timeoutValue * 1000 + WATCHDOG_MARGIN_MS),
       );
+
+      if (STALL_TIMEOUT_MS < timeoutValue * 1000 + WATCHDOG_MARGIN_MS) {
+        timers.push(
+          setTimeout(() => {
+            if (sawOutput) return;
+            stderr = `${stderr}\nno output from cline within ${Math.round(STALL_TIMEOUT_MS / 1000)}s (dispatcher stall watchdog killed the cline process — likely cline CLI/hub-daemon contention; dispatch serially before retrying)`.trim();
+            killLadder();
+          }, STALL_TIMEOUT_MS),
+        );
+      }
+
+      if (HEARTBEAT_INTERVAL_MS > 0) {
+        const startedAt = Date.now();
+        heartbeat = setInterval(() => {
+          const events = stdout.length === 0 ? 0 : stdout.split("\n").filter((l) => l.trim()).length;
+          process.stderr.write(
+            `cline-dispatch: {"heartbeat":true,"elapsedS":${Math.round((Date.now() - startedAt) / 1000)},"stdoutBytes":${stdout.length},"events":${events}}\n`,
+          );
+        }, HEARTBEAT_INTERVAL_MS);
+      }
     }
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
+    child.stdout.on("data", (d) => {
+      sawOutput = true;
+      stdout += d;
+    });
+    child.stderr.on("data", (d) => {
+      sawOutput = true;
+      stderr += d;
+    });
     // A child that exits before draining stdin emits EPIPE on this stream;
     // without a listener that is an uncaught exception. The close handler
     // still reports the real exit code.
@@ -200,7 +241,49 @@ function loadProfiles() {
   return JSON.parse(readFileSync(PROFILES_PATH, "utf8"));
 }
 
-function findProjectProfiles(startDir) {
+// A linked git worktree's .git is a FILE pointing into the main repo's
+// .git/worktrees/<name>. Resolve the main working tree root from it via the
+// commondir file — plain fs, no git subprocess. Returns null when cwd is not
+// inside a linked worktree (or anything is unexpected).
+function findMainWorktreeRoot(startDir) {
+  let dir = resolve(startDir || process.cwd());
+  while (true) {
+    const gitPath = join(dir, ".git");
+    if (existsSync(gitPath)) {
+      let stat;
+      try {
+        stat = statSync(gitPath);
+      } catch {
+        return null;
+      }
+      if (!stat.isFile()) return null; // main worktree or bare layout — no fallback
+      try {
+        const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(gitPath, "utf8"));
+        if (!m) return null;
+        const gitDir = resolve(dir, m[1].trim());
+        // Linked-worktree layouts only: a submodule's .git file points at
+        // .git/modules/<name> and must NOT trigger the fallback.
+        if (!/[\\/]worktrees[\\/]/.test(gitDir)) return null;
+        const commonDirFile = join(gitDir, "commondir");
+        const commonDir = existsSync(commonDirFile)
+          ? resolve(gitDir, readFileSync(commonDirFile, "utf8").trim())
+          : /[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.test(gitDir)
+            ? dirname(dirname(gitDir))
+            : null;
+        if (!commonDir) return null;
+        const mainRoot = dirname(commonDir);
+        return mainRoot === dir ? null : mainRoot;
+      } catch {
+        return null;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function walkForProfiles(startDir) {
   let dir = resolve(startDir || process.cwd());
   while (true) {
     const candidate = join(dir, ".cline-profiles.json");
@@ -220,6 +303,55 @@ function findProjectProfiles(startDir) {
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;
+  }
+}
+
+function findProjectProfiles(startDir) {
+  const direct = walkForProfiles(startDir);
+  if (direct) return direct;
+  const mainRoot = findMainWorktreeRoot(startDir);
+  return mainRoot ? walkForProfiles(mainRoot) : null;
+}
+
+// Explicit profiles-file override: fail closed — a named file that can't be
+// used must never silently fall back to inferred resolution.
+function loadProfilesFileOrExit(profilesFile) {
+  const path = resolve(profilesFile);
+  if (!existsSync(path)) {
+    process.stdout.write(`--profiles-file: ${path} not found.\n`);
+    process.exit(2);
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return {
+      path,
+      dir: dirname(path),
+      profiles: Array.isArray(parsed?.profiles) ? parsed.profiles : [],
+      ledger: parsed?.ledger === true,
+    };
+  } catch (error) {
+    process.stdout.write(`--profiles-file: ${path} is unreadable (${error.message}).\n`);
+    process.exit(2);
+  }
+}
+
+// Best-effort branch echo so the banner shows which tree/branch the Run targets
+// (a field incident had a Run operate on the wrong tree, caught only by prose).
+// Zero-dep: reads .git directly; returns null on any surprise.
+function readGitBranch(cwd) {
+  try {
+    const gitPath = join(resolve(cwd), ".git");
+    let gitDir = gitPath;
+    if (statSync(gitPath).isFile()) {
+      const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(gitPath, "utf8"));
+      if (!m) return null;
+      gitDir = resolve(dirname(gitPath), m[1].trim());
+    }
+    const head = readFileSync(join(gitDir, "HEAD"), "utf8").trim();
+    const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
+    return ref ? ref[1] : `${head.slice(0, 12)} (detached)`;
+  } catch {
+    return null;
   }
 }
 
@@ -278,7 +410,7 @@ function applyProfileOrExit(opts, project) {
   }
   if (resolved.source === "project" && resolved.provider !== "cline-pass") {
     process.stdout.write(
-      `Note: profile "${opts.profile}" (.cline-profiles.json) targets provider "${resolved.provider}" — this Run spends that subscription, not ClinePass.\n\n`,
+      `Note: profile "${opts.profile}" (${project.path}) targets provider "${resolved.provider}" — this Run spends that subscription, not ClinePass.\n\n`,
     );
   }
   opts.provider = resolved.provider;
@@ -316,7 +448,7 @@ async function main() {
     const opts = parseDelegateArgs(rest);
     if (opts.help) {
       process.stdout.write(
-        'Usage: /cline:delegate [--model <id>] [--profile <name>] [--provider <id>] [--plan] [--read-only] [--timeout <s>] [--cwd <path>] "<task>"\n',
+        'Usage: /cline:delegate [--model <id>] [--profile <name>] [--provider <id>] [--plan] [--read-only] [--timeout <s>] [--cwd <path>] [--profiles-file <path>] "<task>"\n',
       );
       process.exit(0);
     }
@@ -325,7 +457,13 @@ async function main() {
       process.exit(2);
     }
     if (!opts.cwd) opts.cwd = process.cwd();
-    const project = findProjectProfiles(opts.cwd);
+    // --profiles-file overrides inferred resolution; a relative path resolves
+    // against the dispatcher process's cwd (per resolve()), not --cwd.
+    // When followed by another recognized flag it parses as undefined and
+    // falls back to inferred resolution — matching other value-flag semantics.
+    const project = opts.profilesFile
+      ? loadProfilesFileOrExit(opts.profilesFile)
+      : findProjectProfiles(opts.cwd);
     applyProfileOrExit(opts, project);
     // Default timeout so a stuck Run can't block the session indefinitely
     // (cline's own default is 0 = no timeout). Override with --timeout.
@@ -334,6 +472,21 @@ async function main() {
     if (opts.timeoutSeconds == null || Number.isNaN(opts.timeoutSeconds)) {
       opts.timeoutSeconds = opts.plan || opts.readOnly ? DEFAULT_READONLY_TIMEOUT_S : DEFAULT_TIMEOUT_S;
     }
+    opts.runId = randomUUID().slice(0, 8);
+    process.stdout.write(
+      `cline-dispatch: ${JSON.stringify({
+        runId: opts.runId,
+        ts: new Date().toISOString(),
+        pid: process.pid,
+        cmd: "delegate",
+        profile: opts.profile ?? null,
+        provider: opts.provider ?? "cline-pass",
+        model: opts.model ?? null,
+        cwd: opts.cwd,
+        timeoutSeconds: opts.timeoutSeconds,
+        gitBranch: readGitBranch(opts.cwd),
+      })}\n`,
+    );
     const stdin = await readStdin();
     if (stdin.trim()) opts.stdin = stdin;
     const out = await delegate(opts, { run: runWithTimeout(opts.timeoutSeconds) });
@@ -352,12 +505,14 @@ async function main() {
     const opts = parseReviewArgs(rest);
     if (opts.help) {
       process.stdout.write(
-        "Usage: /cline:review [--base <ref>] [--model <id>] [--profile <name>] [--provider <id>] [--timeout <s>] [--cwd <path>]\n",
+        "Usage: /cline:review [--base <ref>] [--model <id>] [--profile <name>] [--provider <id>] [--timeout <s>] [--cwd <path>] [--profiles-file <path>]\n",
       );
       process.exit(0);
     }
     if (!opts.cwd) opts.cwd = process.cwd();
-    const project = findProjectProfiles(opts.cwd);
+    const project = opts.profilesFile
+      ? loadProfilesFileOrExit(opts.profilesFile)
+      : findProjectProfiles(opts.cwd);
     applyProfileOrExit(opts, project);
     // Default timeout so a stuck Run can't block the session indefinitely
     // (cline's own default is 0 = no timeout). Override with --timeout.
@@ -365,6 +520,21 @@ async function main() {
     if (opts.timeoutSeconds == null || Number.isNaN(opts.timeoutSeconds)) {
       opts.timeoutSeconds = DEFAULT_READONLY_TIMEOUT_S;
     }
+    opts.runId = randomUUID().slice(0, 8);
+    process.stdout.write(
+      `cline-dispatch: ${JSON.stringify({
+        runId: opts.runId,
+        ts: new Date().toISOString(),
+        pid: process.pid,
+        cmd: "review",
+        profile: opts.profile ?? null,
+        provider: opts.provider ?? "cline-pass",
+        model: opts.model ?? null,
+        cwd: opts.cwd,
+        timeoutSeconds: opts.timeoutSeconds,
+        gitBranch: readGitBranch(opts.cwd),
+      })}\n`,
+    );
     opts.diff = await readStdin();
     const out = await review(opts, { run: runWithTimeout(opts.timeoutSeconds) });
     appendLedgerIfEnabled(project, {

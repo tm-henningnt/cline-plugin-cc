@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0] - 2026-07-12
+
+- Fixed: project-local profiles now resolve inside linked `git worktree` checkouts (the resolver
+  walks the git common dir back to the main working tree root), so worktree-isolated Runs keep
+  access to `.cline-profiles.json` profiles instead of failing with `Unknown profile`.
+- Added: `--profiles-file <path>` on delegate/review as an explicit override (fails closed on a
+  missing or malformed file).
+- Added: `cline-dispatch:` start banner (runId, pid, effective profile/provider/model, cwd, git
+  branch, effective timeout) so a dispatched Run is observable from its first millisecond.
+- Added: heartbeat lines on stderr every 30 s (`CLINE_HEARTBEAT_MS`).
+- Added: zero-output stall watchdog — a `cline` child that emits nothing within 180 s
+  (`CLINE_STALL_TIMEOUT_MS`) is killed and classified as non-retryable `transport:"stalled"`
+  instead of hanging silently to the full timeout.
+- Added: `runId` in the `cline-run:` trailer and ledger entries.
+- Changed: CLAUDE.md guidance snippet bumped to v6 — concurrency cap (≤2 concurrent Runs,
+  `stalled` means dispatch serially), no-flag-inheritance on re-dispatch, main-tree checks
+  after worktree Runs, and runId-based attribution; delegate agent now relays the dispatch
+  banner's runId and never claims shared-worktree commits without its own Run's trailer.
+
 ## [0.8.1] - 2026-07-10
 
 Safety fix and Model Feed friction reduction found while dogfooding profile creation for free

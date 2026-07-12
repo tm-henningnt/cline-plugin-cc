@@ -25,13 +25,16 @@ export function buildLedgerEntry({ cmd, profile, opts = {}, out = {}, nowIso }) 
 
   setKnown(entry, "cmd", cmd);
   setKnown(entry, "profile", profile);
+  setKnown(entry, "runId", opts.runId ?? runMeta.runId);
   setKnown(entry, "provider", result.provider ?? opts.provider);
   setKnown(entry, "model", result.model ?? opts.model);
 
-  // Classify a timed-out Run in the ledger (finishReason not available from
+  // Classify a timed-out or stalled Run in the ledger (finishReason not available from
   // the run_result stream when the CLI exits non-zero without a completed
   // result).
-  const finishReason = result.finishReason ?? (runMeta.transport === "timeout" ? "timeout" : null);
+  const finishReason =
+    result.finishReason ??
+    (runMeta.transport === "timeout" || runMeta.transport === "stalled" ? runMeta.transport : null);
   setKnown(entry, "finishReason", finishReason);
 
   const exitCode = finiteNumber(runMeta.exitCode);

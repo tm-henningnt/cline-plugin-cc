@@ -4,20 +4,22 @@ import { extractResult, parseNdjson } from "./parse-ndjson.mjs";
 export const TRANSPORT_RETRY_NOTE =
   "Note: cline hit a transport error (known signature) and the Run was retried once.";
 
-function buildRunMeta(exitCode, { retried, salvaged, transport }) {
+function buildRunMeta(exitCode, { retried, salvaged, transport, runId }) {
   return {
     exitCode,
     retried,
     salvaged,
     transport,
+    ...(runId ? { runId } : {}),
   };
 }
 
-function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transport = null } = {}) {
+function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transport = null, runId = null } = {}) {
   const signature = transportSignature(exitCode, stdout, stderr);
   const runMetaBase = {
     retried,
     transport: transport ?? signature,
+    ...(runId ? { runId } : {}),
   };
 
   if (exitCode !== 0) {
@@ -29,7 +31,7 @@ function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transpor
           text:
             `Warning: cline exited with code ${exitCode} after completing the Run ` +
             `(transport error on shutdown); the completed result below was salvaged from its output.\n\n` +
-            formatResult(result, { retried, salvaged: true }),
+            formatResult(result, { retried, salvaged: true, ...(runId ? { runId } : {}) }),
           result,
           runMeta: buildRunMeta(exitCode, { ...runMetaBase, salvaged: true }),
         },
@@ -46,6 +48,7 @@ function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transpor
       retried: runMetaBase.retried,
       salvaged: false,
       toolCalls,
+      ...(runId ? { runId } : {}),
     };
 
     return {
@@ -62,7 +65,7 @@ function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transpor
   return {
     output: {
       ok: result.ok,
-      text: formatResult(result, { retried }),
+      text: formatResult(result, { retried, ...(runId ? { runId } : {}) }),
       result,
       runMeta: buildRunMeta(exitCode, { ...runMetaBase, salvaged: false }),
     },
@@ -72,12 +75,13 @@ function formatAttempt({ stdout, stderr, exitCode }, { retried = false, transpor
 
 // Runs one Run via deps.run, salvaging completed Results on non-zero exit and
 // retrying a known transport crash once. Shared by the delegate and review handlers.
-export async function executeRun(argv, { cwd, input }, deps) {
-  const first = formatAttempt(await deps.run(argv, { cwd, input }));
+export async function executeRun(argv, { cwd, input, runId }, deps) {
+  const first = formatAttempt(await deps.run(argv, { cwd, input, runId }), { runId });
   if (!first.shouldRetry) return first.output;
-  const second = formatAttempt(await deps.run(argv, { cwd, input }), {
+  const second = formatAttempt(await deps.run(argv, { cwd, input, runId }), {
     retried: true,
     transport: first.output.runMeta.transport,
+    runId,
   });
   return { ...second.output, text: `${TRANSPORT_RETRY_NOTE}\n\n${second.output.text}` };
 }

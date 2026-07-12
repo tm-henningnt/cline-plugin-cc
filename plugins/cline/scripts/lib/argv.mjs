@@ -43,6 +43,7 @@ const FLAGS_WITH_VALUE = new Map([
   ["--provider", "provider"],
   ["--timeout", "timeoutSeconds"],
   ["--cwd", "cwd"],
+  ["--profiles-file", "profilesFile"],
 ]);
 const BOOLEAN_FLAGS = new Map([
   ["--plan", "plan"],
@@ -58,6 +59,7 @@ const REVIEW_FLAGS_WITH_VALUE = new Map([
   ["--provider", "provider"],
   ["--timeout", "timeoutSeconds"],
   ["--cwd", "cwd"],
+  ["--profiles-file", "profilesFile"],
 ]);
 
 const REVIEW_BOOLEAN_FLAGS = new Map([

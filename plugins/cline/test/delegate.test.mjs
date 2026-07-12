@@ -269,3 +269,30 @@ test("delegate: hook-dispatch-failed with timed-out text still retries once", as
   assert.equal(out.runMeta.transport, "hook-dispatch-failed");
   assert.equal(out.runMeta.retried, true);
 });
+
+test("delegate: runId is threaded into trailer and runMeta", async () => {
+  const { run } = fakeRun({ stdout: fixture, stderr: "", exitCode: 0 });
+  const out = await delegate({ prompt: "task", runId: "abc12345" }, { run });
+
+  assert.equal(out.runMeta.runId, "abc12345");
+  const trailer = out.text
+    .split("\n")
+    .filter((line) => line.startsWith("cline-run: "))
+    .at(-1);
+  const parsed = JSON.parse(trailer.slice("cline-run: ".length));
+  assert.equal(parsed.runId, "abc12345");
+});
+
+test("delegate: retry attempts share the same runId", async () => {
+  const { run, calls } = fakeRunSequence([
+    { stdout: "", stderr: "session not found", exitCode: 1 },
+    { stdout: fixture, stderr: "", exitCode: 0 },
+  ]);
+  const out = await delegate({ prompt: "task", runId: "abc12345" }, { run });
+
+  assert.equal(out.ok, true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].opts.runId, "abc12345");
+  assert.equal(calls[1].opts.runId, "abc12345");
+  assert.equal(out.runMeta.runId, "abc12345");
+});

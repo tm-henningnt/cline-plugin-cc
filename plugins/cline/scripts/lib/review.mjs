@@ -33,5 +33,5 @@ export async function review(opts, deps) {
     prompt: buildReviewPrompt(opts),
   });
 
-  return executeRun(argv, { cwd: opts.cwd, input: opts.diff }, deps);
+  return executeRun(argv, { cwd: opts.cwd, input: opts.diff, runId: opts.runId }, deps);
 }

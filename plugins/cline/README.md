@@ -107,7 +107,7 @@ project's or global `CLAUDE.md`:
 
 ```markdown
 ## Cline delegation
-<!-- cline-plugin guidance v5 — managed section; /cline:setup offers updates -->
+<!-- cline-plugin guidance v6 — managed section; /cline:setup offers updates -->
 
 This machine has the cline plugin. When orchestrating multi-step work, prefer handing
 well-scoped, self-contained implementation steps (boilerplate, renames, test scaffolding,
@@ -129,9 +129,17 @@ subscription instead of the session budget:
 - Pick the model per task with `--profile <name>` in the request (list profiles with
   `/cline:profiles`); use `--plan`/`--read-only` for analysis-only Runs. Keep model wishes out of
   the task text — flags only.
-- Fan-out is the intended shape for batches: spawn several `cline:delegate` subagents
-  concurrently, one self-contained request each (in Workflow scripts:
-  `agent(prompt, { agentType: 'cline:delegate' })`). Each spawn is exactly one Run.
+- Fan-out works but cap it: keep concurrent Runs on one machine to ≤2 (prefer serial) —
+  field data shows ≥3 concurrent dispatches can stall ALL of them before any work starts
+  (suspected CLI/daemon contention). A `transport:"stalled"` failure (~3 min fail-fast)
+  means the Run produced zero output at startup: dispatch serially or wait for the machine
+  to go idle, do NOT insta-retry into the same contention. In Workflow scripts:
+  `agent(prompt, { agentType: 'cline:delegate' })`, one Run per spawn.
+- Every dispatch is independent — flags do NOT carry over to retries or follow-ups; re-pass
+  `--timeout` (and every other flag) each time. The dispatch banner line `cline-dispatch:
+  {...}` (first stdout line on a valid dispatch; profile-resolution notes/errors can precede
+  it) echoes the Run's actual runId/model/cwd/branch/timeout — read it to confirm you
+  launched the Run you meant to.
 - Profile guidance (ClinePass's own): `kimi-k2.7-code` coding, `deepseek-v4-flash` fast
   iteration, `deepseek-v4-pro` large changes, `glm-5.2` deep reasoning, `kimi-k2.6` agentic
   workflows, `qwen3.7-max` heavy workloads. All flat-rate, but heavier models drain the
@@ -149,6 +157,16 @@ subscription instead of the session budget:
   each worktree) — shared-tree parallel Runs produce diff-attribution confusion and
   self-flagged false alarms. Worktrees checked out from the same base commit are mutually
   stale — parallelize only genuinely independent issues.
+  After any worktree Run, also check the MAIN tree (`git status` at the repo root): stray
+  writes and even direct commits to the real branch have occurred in the field. A Run whose
+  output names a long-lived branch it shouldn't know is a red flag — verify with
+  `git worktree list` and `git log` on the main tree. Project profiles resolve from the main
+  checkout automatically; `--profiles-file <path>` overrides explicitly.
+- Pin work to Runs by `runId`, never by "the tree changed": a stale or killed dispatch that
+  polls a shared worktree later can produce an honest-looking claim to another lane's commits as its
+  own. Attribute a commit to a Run only via the `runId` in its `cline-dispatch:` banner /
+  `cline-run:` trailer; when the task text tells the Run to commit, have it include a
+  `Cline-Run: <runId>` trailer so attribution survives shared trees.
 - A substituted acceptance command is not verification: when a Run claims the spec'd command
   "fails in this environment" and swaps in an "equivalent" one, or whose sandbox lacks a
   capability the test depends on, verify the actual mechanism, not just the reported exit
@@ -167,7 +185,7 @@ subscription instead of the session budget:
   handles read-only reviews of local diffs.
 - User-invoked commands (suggest these; do not invoke them yourself — only `/cline:profiles`
   is invocable by you): `/cline:delegate [--profile <name>|--model <slug>] [--provider <id>]
-  [--plan|--read-only] [--timeout <s>] [--cwd <path>] "<task>"` ·
+  [--plan|--read-only] [--timeout <s>] [--profiles-file <path>] [--cwd <path>] "<task>"` ·
   `/cline:review [--base <ref>]` + the same flags · `/cline:usage` ·
   `/cline:setup [--refresh-models]` · `/cline:profiles [--cwd <path>]`.
 ```

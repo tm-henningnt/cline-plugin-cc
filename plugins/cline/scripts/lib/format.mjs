@@ -8,6 +8,7 @@ const TRANSPORT_SIGNATURES = [
   },
   { key: "session-not-found", pattern: /session not found/i, retryable: true },
   { key: "hook-dispatch-failed", pattern: /hook dispatch failed/i, retryable: true },
+  { key: "stalled", pattern: /stall watchdog/i, retryable: false },
   { key: "timeout", pattern: /timed out/i, retryable: false },
 ];
 const MODEL_CONTENT_TYPES = new Set(["run_result", "agent_event", "hook_event"]);
@@ -105,6 +106,7 @@ function buildRunTelemetry(result, annotations) {
   if (result.finishReason != null) telemetry.finishReason = result.finishReason;
   if (annotations.retried) telemetry.retried = true;
   if (annotations.salvaged) telemetry.salvaged = true;
+  if (annotations.runId) telemetry.runId = annotations.runId;
   return telemetry;
 }
 
@@ -112,6 +114,7 @@ export function buildFailureTelemetry(exitCode, annotations) {
   const telemetry = { ok: false, exitCode };
   if (annotations.transport) telemetry.transport = annotations.transport;
   if (annotations.retried) telemetry.retried = true;
+  if (annotations.runId) telemetry.runId = annotations.runId;
   const tc = finiteNumber(annotations?.toolCalls);
   if (tc != null) telemetry.toolCalls = tc;
   return telemetry;

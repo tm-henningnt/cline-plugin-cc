@@ -160,3 +160,19 @@ test("parseReviewArgs: --help is recognized as a flag", () => {
   const opts = parseReviewArgs(["--help"]);
   assert.equal(opts.help, true);
 });
+
+test("parseDelegateArgs: parses --profiles-file from argv", () => {
+  const opts = parseDelegateArgs(["--profiles-file", "/some/path", "task"]);
+  assert.equal(opts.profilesFile, "/some/path");
+  assert.equal(opts.prompt, "task");
+});
+
+test("parseDelegateArgs: parses --profiles-file from raw string", () => {
+  const opts = parseDelegateArgs('--profiles-file /some/path "task"');
+  assert.equal(opts.profilesFile, "/some/path");
+  assert.equal(opts.prompt, "task");
+});
+
+test("parseReviewArgs: parses --profiles-file", () => {
+  assert.deepEqual(parseReviewArgs(["--profiles-file", "/some/path"]), { profilesFile: "/some/path" });
+});
