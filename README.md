@@ -1,7 +1,7 @@
-# Cline Claude Code Plugin
+# Cline Plugin for Claude Code and Codex
 
-A Claude Code plugin that delegates coding tasks to the Cline CLI so work runs on the user's
-ClinePass credits.
+A Claude Code and Codex plugin that delegates coding tasks to the Cline CLI so work runs on the
+user's ClinePass credits.
 
 Each command runs as a one-shot Cline CLI Run — no server, no daemon, no session state.
 
@@ -24,7 +24,17 @@ Install in Claude Code:
 /plugin install cline@tm-henningnt
 ```
 
-Then run `/cline:setup`. It verifies the CLI install and sign-in, shows the model Runs will use,
+Install in Codex:
+
+```text
+codex plugin marketplace add tm-henningnt/cline-plugin-cc
+```
+
+Restart the Codex desktop app, select the marketplace in the plugin directory, and install
+`cline`. Codex exposes the same operations as `$cline:delegate`, `$cline:review`,
+`$cline:setup`, `$cline:usage`, `$cline:profiles`, and `$cline:model-feed`.
+
+Then run `/cline:setup` in Claude Code or `$cline:setup` in Codex. It verifies the CLI install and sign-in, shows the model Runs will use,
 runs a tiny validation Run, and — this is the step that makes Claude delegate on its own — offers
 to add the "Recommended CLAUDE.md guidance" section below to your project or global `CLAUDE.md`.
 Accept that offer (or paste the snippet yourself); without it, Claude has no standing instructions

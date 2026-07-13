@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1] - 2026-07-13
+
+- Added: native Codex plugin packaging, marketplace metadata, and skills for Delegate, Review,
+  Setup, Usage, Profiles, and Model Feed. Every Codex operation uses the same dispatcher and
+  Result contract as the Claude Code plugin.
+- Changed: public and contributor documentation now describes the Claude Code and Codex Host
+  installation paths and their shared local Cline authentication boundary.
+
 ## [0.9.0] - 2026-07-12
 
 - Fixed: project-local profiles now resolve inside linked `git worktree` checkouts (the resolver

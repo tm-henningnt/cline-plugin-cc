@@ -1,14 +1,19 @@
-# Cline Plugin for Claude Code
+# Cline Plugin
 
-A Claude Code plugin that delegates coding tasks to Cline so work runs on the user's
-ClinePass credits instead of in the Claude Code session.
+A Claude Code and Codex plugin that delegates coding tasks to Cline so work runs on the user's
+ClinePass credits instead of in the Host session.
 
 ## Language
 
 **Delegate**:
-The act of handing a self-contained coding task from Claude Code to Cline, which
+The act of handing a self-contained coding task from a Host to Cline, which
 executes it headlessly and returns a result.
 _Avoid_: dispatch, offload, hand off (handoff refers to a separate cross-session skill)
+
+**Host**:
+An agentic coding environment that exposes the Cline delegation capability to its user,
+such as Claude Code or Codex.
+_Avoid_: client (ambiguous with Cline's API client), platform (too broad)
 
 **Run**:
 A single one-shot Cline execution — one prompt in, one result out, no continuity.
@@ -31,7 +36,7 @@ on each Run, and never combined with explicit `--model`/`--provider` flags.
 _Avoid_: default, alias (alias undersells that it's validated against the bundled lists)
 
 **Result**:
-What a Run returns to Claude Code: the files Cline changed plus its final summary.
+What a Run returns to a Host: the files Cline changed plus its final summary.
 _Avoid_: output, response
 
 **Ledger**:

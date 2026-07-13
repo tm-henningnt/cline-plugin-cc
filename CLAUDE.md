@@ -4,11 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A publishable Claude Code plugin (`cline`) that delegates coding tasks to the **Cline** CLI so the
-work runs on the user's flat-rate **ClinePass** subscription instead of the Claude Code session's
-budget. It mirrors the *scaffolding* of `openai/codex-plugin-cc` (marketplace + plugin manifests,
-thin `.md` slash commands over one Node dispatcher) but deliberately drops that plugin's persistent
-`app-server`/broker architecture — see ADR-0001.
+A publishable Cline plugin for Claude Code and Codex. It delegates coding tasks to the **Cline** CLI
+so work runs on the user's flat-rate **ClinePass** subscription instead of the Host session's
+budget. Claude Code commands and Codex skills both relay the same Node dispatcher and deliberately
+drop persistent `app-server`/broker architecture — see ADR-0001 and ADR-0006.
 
 ## Current state
 
@@ -36,9 +35,10 @@ GitHub issues #1–#6. Future changes must continue to respect the binding desig
   no network.
 - **Fixtures come from reality**: capture actual `cline --json` output and actual `/balance`+
   `/usages` responses into fixture files; tests assert against those, not guessed shapes.
-- **Commands are thin `.md` wrappers** (`plugins/cline/commands/*.md`): frontmatter + a body that
-  invokes the dispatcher and relays its stdout **verbatim**. Reference plugin files via the
-  `${CLAUDE_PLUGIN_ROOT}` env var Claude Code sets.
+- **Host wrappers are thin Markdown instructions**: Claude Code commands live in
+  `plugins/cline/commands/` and use `${CLAUDE_PLUGIN_ROOT}`; Codex skills live in
+  `plugins/cline/skills/` and use `${PLUGIN_ROOT}`. Both invoke the dispatcher and relay its
+  stdout **verbatim**.
 - **Model default** (ADR-0002): delegated/review Runs default to the **`cline-pass` provider**
   (`-P cline-pass`) with no `-m`, so cline uses that provider's configured `cline-pass/*` model.
   ClinePass is a distinct provider id (`cline-pass`), NOT the `cline` provider (which routes to a
@@ -73,9 +73,11 @@ GitHub issues #1–#6. Future changes must continue to respect the binding desig
 
 ## Publishing
 
-Marketplace name `tm-henningnt`, plugin name `cline`, commands namespaced `/cline:*`. Layout:
-`.claude-plugin/marketplace.json` (root) + `plugins/cline/.claude-plugin/plugin.json`. Install:
-`/plugin marketplace add tm-henningnt/cline-plugin-cc` → `/plugin install cline@tm-henningnt`.
+Plugin name `cline`. Claude Code uses `.claude-plugin/marketplace.json` and
+`plugins/cline/.claude-plugin/plugin.json`: `/plugin marketplace add tm-henningnt/cline-plugin-cc`
+then `/plugin install cline@tm-henningnt`. Codex uses `.agents/plugins/marketplace.json` and
+`plugins/cline/.codex-plugin/plugin.json`; add the repository marketplace with
+`codex plugin marketplace add tm-henningnt/cline-plugin-cc` and install it from the Codex app.
 
 ## Agentic Execution — Model & Tool Selection
 
@@ -84,3 +86,18 @@ subagents), and the GPT-5.6/ClinePass model tables are maintained globally in
 `~/.claude/DELEGATION.md` (auto-loaded via `~/.claude/CLAUDE.md` for every project) — no
 project-specific overrides here. Update the global file, not this one, when models or
 guidance change.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues is the repository's issue tracker. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The default five-role vocabulary is used. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository using the root `CONTEXT.md` and `docs/adr/`. See
+`docs/agents/domain.md`.

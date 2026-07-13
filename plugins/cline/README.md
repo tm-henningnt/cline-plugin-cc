@@ -1,7 +1,7 @@
-# Cline plugin for Claude Code
+# Cline plugin for Claude Code and Codex
 
 Delegate coding tasks to the [Cline CLI](https://cline.bot) so the work runs on your flat-rate
-ClinePass subscription instead of the Claude Code session's budget. Each command is a one-shot
+ClinePass subscription instead of the Host session's budget. Each command is a one-shot
 `cline` subprocess — no server, no daemon, no session state.
 
 ## Prerequisites
@@ -10,9 +10,13 @@ ClinePass subscription instead of the Claude Code session's budget. Each command
 - The Cline CLI: `npm i -g cline` (verified against cline 3.0.37).
 - Sign in once: `cline auth cline`.
 
-Run `/cline:setup` after installing: it verifies all three, runs a tiny validation Run, and
+Run `/cline:setup` after installing in Claude Code or `$cline:setup` in Codex: it verifies all three, runs a tiny validation Run, and
 offers to add the "Recommended CLAUDE.md guidance" below to your `CLAUDE.md` — accept that offer
 to make Claude delegate autonomously. Use `/cline:profiles` to list model profiles.
+
+Install the Codex plugin by adding this repository as a marketplace with
+`codex plugin marketplace add tm-henningnt/cline-plugin-cc`, then restart the Codex desktop app
+and install `cline` from that marketplace.
 
 ## Commands
 
@@ -33,7 +37,9 @@ to make Claude delegate autonomously. Use `/cline:profiles` to list model profil
   will use, available profiles, and a tiny validation Run.
 
 Claude itself delegates through the `cline:delegate` subagent (see "Recommended CLAUDE.md
-guidance" below) — the commands above are for you.
+guidance" below). Codex provides the same six operations as `$cline:delegate`, `$cline:review`,
+`$cline:usage`, `$cline:profiles`, `$cline:model-feed`, and `$cline:setup` through its native
+plugin marketplace; both Hosts call the same dispatcher.
 
 Runs that crash with a known Cline transport signature are retried once with a visible note, and
 completed work is salvaged when the CLI exits non-zero after emitting a completed Result. Run
