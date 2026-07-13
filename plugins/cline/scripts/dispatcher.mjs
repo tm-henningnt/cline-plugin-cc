@@ -8,7 +8,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, appendFileSync, constants, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ import {
   summarizeTestRun,
 } from "./lib/setup.mjs";
 import { redactAccountPath, usage } from "./lib/usage.mjs";
+import { resolveClineState, withClineState } from "./lib/host-state.mjs";
 
 const DEFAULT_TIMEOUT_S = 600;
 const DEFAULT_READONLY_TIMEOUT_S = 1800;
@@ -52,9 +53,9 @@ const CLINEPASS_MODELS_PATH = fileURLToPath(
 );
 const PROFILES_PATH = fileURLToPath(new URL("../data/profiles.json", import.meta.url));
 
-function realRun(argv, { cwd, input, timeoutSeconds } = {}) {
+function realRun(argv, { cwd, input, timeoutSeconds, clineState } = {}) {
   return new Promise((resolve) => {
-    const child = spawn("cline", argv, { cwd: cwd || process.cwd() });
+    const child = spawn("cline", withClineState(argv, clineState), { cwd: cwd || process.cwd() });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -215,20 +216,55 @@ async function realModelFeedFetchJson(url, { headers = {} } = {}) {
   return result;
 }
 
-function readStoredClineAuth() {
-  const providersPath = join(homedir(), ".cline", "data", "settings", "providers.json");
+function readStoredClineAuth(clineState = {}) {
+  if (clineState.host && !clineState.ok) {
+    return {
+      token: "",
+      accountId: "",
+      model: null,
+      provider: null,
+      clinePassModel: null,
+      status: "missing",
+      settingsPath: null,
+    };
+  }
+  const providersPath = clineState.stateRoot
+    ? join(clineState.stateRoot, "data", "settings", "providers.json")
+    : join(homedir(), ".cline", "data", "settings", "providers.json");
 
   try {
     const providers = JSON.parse(readFileSync(providersPath, "utf8"));
-    return { ...selectClineAuth(providers), status: "ok" };
+    return { ...selectClineAuth(providers), status: "ok", settingsPath: providersPath };
   } catch (error) {
     const status = error?.code === "ENOENT" ? "missing" : "unreadable";
-    return { token: "", accountId: "", model: null, provider: null, clinePassModel: null, status };
+    return {
+      token: "",
+      accountId: "",
+      model: null,
+      provider: null,
+      clinePassModel: null,
+      status,
+      settingsPath: providersPath,
+    };
   }
 }
 
-async function getCliVersion() {
-  const { stdout, stderr, exitCode } = await realRun(["--version"]);
+function inspectClineState(clineState) {
+  if (!clineState?.stateRoot) return null;
+  if (!clineState.ok) return { ok: false, status: "unsafe", path: clineState.stateRoot };
+  try {
+    const stat = statSync(clineState.stateRoot);
+    if (!stat.isDirectory()) return { ok: false, status: "not-directory", path: clineState.stateRoot };
+    accessSync(clineState.stateRoot, constants.W_OK);
+    return { ok: true, status: "ready", path: clineState.stateRoot };
+  } catch (error) {
+    if (error?.code === "ENOENT") return { ok: false, status: "missing", path: clineState.stateRoot };
+    return { ok: false, status: "unwritable", path: clineState.stateRoot };
+  }
+}
+
+async function getCliVersion(clineState) {
+  const { stdout, stderr, exitCode } = await realRun(["--version"], { clineState });
   if (exitCode !== 0) return null;
   return String(stdout || stderr || "installed").trim();
 }
@@ -359,17 +395,17 @@ function writeClinePassModels(obj) {
   writeFileSync(CLINEPASS_MODELS_PATH, `${JSON.stringify(obj, null, 2)}\n`, "utf8");
 }
 
-async function testClineRun() {
+async function testClineRun(clineState) {
   const output = await realRun(
     // Cline's default timeout is 0 (none); this tiny validation Run should be bounded.
     ["--json", "-p", "-P", "cline-pass", "-t", "120", "reply with OK"],
-    { cwd: process.cwd() },
+    { cwd: process.cwd(), clineState },
   );
   return summarizeTestRun(output);
 }
 
-function runWithTimeout(timeoutSeconds) {
-  return (argv, runOpts) => realRun(argv, { ...runOpts, timeoutSeconds });
+function runWithTimeout(timeoutSeconds, clineState) {
+  return (argv, runOpts) => realRun(argv, { ...runOpts, timeoutSeconds, clineState });
 }
 
 function readStdin() {
@@ -443,6 +479,8 @@ function readLedgerIfEnabled(project) {
 
 async function main() {
   const [subcommand, ...rest] = process.argv.slice(2);
+  const invocationCwd = process.cwd();
+  const clineState = resolveClineState({ invocationCwd });
 
   if (subcommand === "delegate") {
     const opts = parseDelegateArgs(rest);
@@ -457,6 +495,11 @@ async function main() {
       process.exit(2);
     }
     if (!opts.cwd) opts.cwd = process.cwd();
+    const runClineState = resolveClineState({ cwd: opts.cwd, invocationCwd });
+    if (!runClineState.ok) {
+      process.stdout.write(`${runClineState.text}\n`);
+      process.exit(2);
+    }
     // --profiles-file overrides inferred resolution; a relative path resolves
     // against the dispatcher process's cwd (per resolve()), not --cwd.
     // When followed by another recognized flag it parses as undefined and
@@ -489,7 +532,7 @@ async function main() {
     );
     const stdin = await readStdin();
     if (stdin.trim()) opts.stdin = stdin;
-    const out = await delegate(opts, { run: runWithTimeout(opts.timeoutSeconds) });
+    const out = await delegate(opts, { run: runWithTimeout(opts.timeoutSeconds, runClineState) });
     appendLedgerIfEnabled(project, {
       cmd: "delegate",
       profile: opts.profile ?? null,
@@ -510,6 +553,11 @@ async function main() {
       process.exit(0);
     }
     if (!opts.cwd) opts.cwd = process.cwd();
+    const runClineState = resolveClineState({ cwd: opts.cwd, invocationCwd });
+    if (!runClineState.ok) {
+      process.stdout.write(`${runClineState.text}\n`);
+      process.exit(2);
+    }
     const project = opts.profilesFile
       ? loadProfilesFileOrExit(opts.profilesFile)
       : findProjectProfiles(opts.cwd);
@@ -536,7 +584,7 @@ async function main() {
       })}\n`,
     );
     opts.diff = await readStdin();
-    const out = await review(opts, { run: runWithTimeout(opts.timeoutSeconds) });
+    const out = await review(opts, { run: runWithTimeout(opts.timeoutSeconds, runClineState) });
     appendLedgerIfEnabled(project, {
       cmd: "review",
       profile: opts.profile ?? null,
@@ -549,13 +597,20 @@ async function main() {
   }
 
   if (subcommand === "usage") {
-    const auth = readStoredClineAuth();
+    if (!clineState.ok) {
+      process.stdout.write(`${clineState.text}\n`);
+      process.exit(2);
+    }
+    const auth = readStoredClineAuth(clineState);
     const nowIso = new Date().toISOString();
     const out = await usage(
       {
         token: auth.token,
         accountId: auth.accountId,
         authStatus: auth.status,
+        authPath: auth.settingsPath,
+        host: clineState.host,
+        stateRoot: clineState.stateRoot,
         nowIso,
         ...readLedgerIfEnabled(findProjectProfiles(process.cwd())),
       },
@@ -575,12 +630,13 @@ async function main() {
       : await setup(
           { nowIso: new Date().toISOString() },
           {
-            getCliVersion,
-            readAuth: readStoredClineAuth,
+            getCliVersion: () => getCliVersion(clineState),
+            readAuth: () => readStoredClineAuth(clineState),
+            getState: () => inspectClineState(clineState),
             loadModels: loadClinePassModels,
             loadProfiles,
             loadProjectProfiles: () => findProjectProfiles(process.cwd()),
-            testRun: testClineRun,
+            testRun: () => testClineRun(clineState),
           },
         );
     process.stdout.write(out.text + "\n");

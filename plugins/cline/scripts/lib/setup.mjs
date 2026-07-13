@@ -1,4 +1,5 @@
 import { formatRunFailure } from "./format.mjs";
+import { shellQuote } from "./host-state.mjs";
 import { extractResult } from "./parse-ndjson.mjs";
 
 // The cline CLI version the NDJSON parsing and flags were verified against
@@ -177,14 +178,35 @@ export function formatSetupReport(state) {
     lines.push("- [ ] Cline CLI: not found. Install with `npm i -g cline`.");
   }
 
+  if (state?.clineState?.path) {
+    const root = code(state.clineState.path);
+    if (state.clineState.ok) {
+      lines.push(`- [x] Codex Cline state: ${root} is writable.`);
+    } else if (state.clineState.status === "unsafe") {
+      lines.push(
+        `- [ ] Codex Cline state: ${root} is inside the project and is not allowed. Set \`CLINE_CODEX_DATA_DIR\` to a user-owned directory such as \`~/.codex/cline\`, then retry \`$cline:setup\`.`,
+      );
+    } else if (state.clineState.status === "missing") {
+      lines.push(
+        `- [ ] Codex Cline state: ${root} does not exist or is outside this sandbox. Create it, add it to Codex \`sandbox_workspace_write.writable_roots\`, enable \`sandbox_workspace_write.network_access\`, then run \`cline --data-dir ${shellQuote(state.clineState.path)} auth cline\`.`,
+      );
+    } else {
+      lines.push(
+        `- [ ] Codex Cline state: ${root} is not writable. Add it to Codex \`sandbox_workspace_write.writable_roots\`, then retry \`$cline:setup\`.`,
+      );
+    }
+  }
+
   if (state?.signedIn) {
     lines.push("- [x] Sign-in: stored Cline OAuth token found.");
   } else if (state?.authStatus === "unreadable") {
     lines.push(
-      "- [ ] Sign-in: settings file unreadable — fix or remove ~/.cline/data/settings/providers.json, then run `cline auth cline`.",
+      `- [ ] Sign-in: settings file unreadable — fix or remove ${state?.settingsPath ?? "~/.cline/data/settings/providers.json"}, then run \`cline${state?.clineState?.path ? ` --data-dir ${shellQuote(state.clineState.path)}` : ""} auth cline\`.`,
     );
   } else {
-    lines.push("- [ ] Sign-in: not signed in. Run `cline auth cline`.");
+    lines.push(
+      `- [ ] Sign-in: not signed in. Run \`cline${state?.clineState?.path ? ` --data-dir ${shellQuote(state.clineState.path)}` : ""} auth cline\`.`,
+    );
   }
 
   if (state?.provider || state?.model) {
@@ -283,6 +305,7 @@ export async function setup(opts = {}, deps) {
   const modelBundle = await deps.loadModels();
   const profileBundle = await deps.loadProfiles();
   const project = await deps.loadProjectProfiles();
+  const clineState = deps.getState ? await deps.getState() : null;
   const models = normalizeModels(modelBundle?.models ?? []);
   const snapshotAgeDays = modelSnapshotAgeDays(modelBundle?.fetchedAt, opts.nowIso);
   const signedIn = Boolean(String(auth?.token ?? "").trim());
@@ -292,6 +315,8 @@ export async function setup(opts = {}, deps) {
     cliVersion,
     signedIn,
     authStatus: auth?.status ?? null,
+    settingsPath: auth?.settingsPath ?? null,
+    clineState,
     provider,
     model,
     clinePassModel: normalizeNullable(auth?.clinePassModel),
@@ -306,7 +331,7 @@ export async function setup(opts = {}, deps) {
     testRun: null,
   };
 
-  if (cliVersion && signedIn) {
+  if (cliVersion && signedIn && (clineState?.ok ?? true)) {
     try {
       state.testRun = await deps.testRun(opts);
     } catch (error) {
@@ -315,7 +340,7 @@ export async function setup(opts = {}, deps) {
   }
 
   return {
-    ok: Boolean(cliVersion && signedIn && (state.testRun?.ok ?? true)),
+    ok: Boolean(cliVersion && signedIn && (clineState?.ok ?? true) && (state.testRun?.ok ?? true)),
     text: formatSetupReport(state),
   };
 }

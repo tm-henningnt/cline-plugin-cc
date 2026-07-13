@@ -2,15 +2,17 @@
 
 ## Project Structure & Module Organization
 
-This repository contains the implemented `cline` Claude Code plugin. The authoritative operating
-guidance lives in `CLAUDE.md`, the glossary in `CONTEXT.md`, and binding architecture decisions in
-`docs/adr/`.
+This repository contains the implemented `cline` Claude Code and Codex plugin. `CLAUDE.md` is
+Claude Code guidance; this `AGENTS.md` is the Codex instruction surface. The glossary is in
+`CONTEXT.md`, and binding architecture decisions live in `docs/adr/`.
 
 The plugin layout is:
 
 - `.claude-plugin/marketplace.json` for the Claude Code marketplace entry.
 - `plugins/cline/.claude-plugin/plugin.json` for the plugin manifest.
+- `plugins/cline/.codex-plugin/plugin.json` for the Codex plugin manifest.
 - `plugins/cline/commands/*.md` for thin `/cline:*` slash-command wrappers.
+- `plugins/cline/skills/*/SKILL.md` for thin `$cline:*` Codex skill wrappers.
 - `plugins/cline/scripts/*.mjs` and `plugins/cline/scripts/lib/*.mjs` for the Node ESM dispatcher and pure helpers.
 - `plugins/cline/data/*.json` for the bundled ClinePass model snapshot and named profiles.
 - Test files should sit near the code they exercise or in a dedicated test directory, using `*.test.mjs`.
@@ -31,7 +33,20 @@ There is no build step or linter configured. Keep runtime code dependency-free u
 
 Use Node 22+ ESM (`.mjs`, `import`/`export`) and prefer small pure functions around a single impure seam: injected subprocess `run` and HTTP `fetch`. Use two-space indentation for JavaScript and JSON. Name domain concepts consistently with `CONTEXT.md`: Delegate, Run, ClinePass, Profile, Result, and Ledger.
 
-Slash commands should be Markdown files named after the command, for example `delegate.md`, `review.md`, and `usage.md`, and should reference plugin files through `${CLAUDE_PLUGIN_ROOT}`.
+Claude slash commands should reference plugin files through `${CLAUDE_PLUGIN_ROOT}`.
+Codex skills should reference them through `${PLUGIN_ROOT}` and declare
+`CLINE_PLUGIN_HOST=codex` before starting the shared dispatcher.
+
+## Codex Cline state
+
+Codex Cline Runs use an isolated Cline state root, defaulting to `~/.codex/cline`, so Cline's
+SQLite session database and OAuth credentials are not written under the sandbox-protected
+`~/.cline`. The user must add this non-repository directory to Codex
+`sandbox_workspace_write.writable_roots` and authenticate it with
+`cline --data-dir ~/.codex/cline auth cline`. Do not copy, symlink, print, or commit Cline state
+or credentials. Codex also needs `sandbox_workspace_write.network_access = true` for Cline's
+provider/API calls; this does not expand filesystem access. Claude Code retains the default
+`~/.cline` state.
 
 ## Testing Guidelines
 
@@ -87,7 +102,8 @@ snapshot above before assuming it's still accurate.
 ## Security & Configuration Tips
 
 Never commit API keys or local credentials. `.env.local` is ignored for private configuration.
-Users sign in with `cline auth cline`, which stores an OAuth token in
-`~/.cline/data/settings/providers.json`. Delegated Runs use that stored sign-in implicitly, and
-`/cline:usage` reads the stored `accessToken` and sends it as a Bearer token to `api.cline.bot`.
-Rotate credentials by re-running `cline auth cline`.
+Claude Code users sign in with `cline auth cline`, which stores an OAuth token in
+`~/.cline/data/settings/providers.json`. Codex users authenticate their isolated state with
+`cline --data-dir ~/.codex/cline auth cline`. Delegated Runs use the selected Host's stored
+sign-in implicitly, and Usage reads its `accessToken` to send as a Bearer token to
+`api.cline.bot`. Rotate credentials by re-running the matching authentication command.

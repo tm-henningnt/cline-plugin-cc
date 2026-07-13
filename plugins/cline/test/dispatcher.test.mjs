@@ -225,6 +225,80 @@ test("dispatcher: delegate returns a successful Cline run summary", async () => 
   assert.match(out.stdout, /hello\.txt/);
 });
 
+test("dispatcher: Codex delegate passes its isolated Cline state root", async () => {
+  const argvPath = join(stubDir, "codex-state-argv.json");
+  const out = await runDispatcher(["delegate", "inspect the fixture"], {
+    env: {
+      CLINE_PLUGIN_HOST: "codex",
+      CLINE_CODEX_DATA_DIR: "/var/state/cline",
+      FAKE_CLINE_ARGV_PATH: argvPath,
+    },
+  });
+
+  assert.equal(out.code, 0);
+  const argv = JSON.parse(readFileSync(argvPath, "utf8"));
+  assert.deepEqual(argv.slice(0, 2), ["--data-dir", "/var/state/cline"]);
+});
+
+test("dispatcher: Codex delegate rejects a project-local Cline state root before spawning", async () => {
+  const argvPath = join(stubDir, "codex-project-state-argv.json");
+  const out = await runDispatcher(["delegate", "inspect the fixture"], {
+    env: {
+      CLINE_PLUGIN_HOST: "codex",
+      CLINE_CODEX_DATA_DIR: join(process.cwd(), ".cline-state"),
+      FAKE_CLINE_ARGV_PATH: argvPath,
+    },
+  });
+
+  assert.equal(out.code, 2);
+  assert.match(out.stdout, /must be outside the project/);
+  assert.equal(existsSync(argvPath), false);
+});
+
+test("dispatcher: Codex delegate checks its state root against an explicit Run cwd", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cline-codex-cwd-"));
+  const argvPath = join(stubDir, "codex-cwd-state-argv.json");
+  try {
+    const out = await runDispatcher(
+      ["delegate", "--cwd", root, "inspect the fixture"],
+      {
+        env: {
+          CLINE_PLUGIN_HOST: "codex",
+          CLINE_CODEX_DATA_DIR: join(root, ".cline-state"),
+          FAKE_CLINE_ARGV_PATH: argvPath,
+        },
+      },
+    );
+    assert.equal(out.code, 2);
+    assert.match(out.stdout, /must be outside the project/);
+    assert.equal(existsSync(argvPath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("dispatcher: Codex delegate rejects an invoking-project state root when Run cwd is external", async () => {
+  const external = mkdtempSync(join(tmpdir(), "cline-codex-external-cwd-"));
+  const argvPath = join(stubDir, "codex-invocation-state-argv.json");
+  try {
+    const out = await runDispatcher(
+      ["delegate", "--cwd", external, "inspect the fixture"],
+      {
+        env: {
+          CLINE_PLUGIN_HOST: "codex",
+          CLINE_CODEX_DATA_DIR: join(process.cwd(), ".cline-state"),
+          FAKE_CLINE_ARGV_PATH: argvPath,
+        },
+      },
+    );
+    assert.equal(out.code, 2);
+    assert.match(out.stdout, /must be outside the project/);
+    assert.equal(existsSync(argvPath), false);
+  } finally {
+    rmSync(external, { recursive: true, force: true });
+  }
+});
+
 test("dispatcher: delegate appends one ledger line when project ledger is enabled", async () => {
   const projectDir = mkdtempSync(join(tmpdir(), "cline-project-ledger-"));
   try {

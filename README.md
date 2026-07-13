@@ -12,7 +12,8 @@ Prerequisites:
 - Node 22+.
 - The `cline` CLI installed with `npm i -g cline` (avoid the deprecated Homebrew formula — it
   lags far behind).
-- Cline CLI sign-in with `cline auth cline`.
+- Cline CLI sign-in. Claude Code uses `cline auth cline`; Codex uses the isolated-state command
+  below.
 
 This plugin has been verified against `cline` 3.0.37; `/cline:setup` warns when your installed
 version differs.
@@ -32,14 +33,43 @@ codex plugin marketplace add tm-henningnt/cline-plugin-cc
 
 Restart the Codex desktop app, select the marketplace in the plugin directory, and install
 `cline`. Codex exposes the same operations as `$cline:delegate`, `$cline:review`,
-`$cline:setup`, `$cline:usage`, `$cline:profiles`, and `$cline:model-feed`.
+`$cline:setup`, `$cline:usage`, `$cline:profiles`, and `$cline:model-feed`. If the skill picker
+does not immediately suggest them, restart after installation and run `codex plugin list` to check
+that the marketplace plugin is available. Invoke `$cline:setup` only after the skill is visible;
+Setup checks Cline prerequisites, not plugin installation.
 
-Then run `/cline:setup` in Claude Code or `$cline:setup` in Codex. It verifies the CLI install and sign-in, shows the model Runs will use,
-runs a tiny validation Run, and — this is the step that makes Claude delegate on its own — offers
-to add the "Recommended CLAUDE.md guidance" section below to your project or global `CLAUDE.md`.
-Accept that offer (or paste the snippet yourself); without it, Claude has no standing instructions
-to route work through the `cline:delegate` subagent. Use `/cline:profiles` any time to list the
-available model profiles.
+### Codex isolated Cline state
+
+Codex's workspace-write sandbox cannot write Cline's default `~/.cline` SQLite session database.
+Configure a dedicated, non-repository state root once:
+
+```toml
+# ~/.codex/config.toml
+[sandbox_workspace_write]
+writable_roots = ["/Users/you/.codex/cline"]
+network_access = true
+```
+
+Then create and authenticate the isolated Cline state from a normal terminal:
+
+```sh
+mkdir -p ~/.codex/cline
+cline --data-dir ~/.codex/cline auth cline
+```
+
+Restart Codex and run `$cline:setup`. To use a different approved directory, set
+`CLINE_CODEX_DATA_DIR` in Codex's environment. Do not put this directory in a repository or copy
+`~/.cline` into it: it contains Cline OAuth credentials and session state. A one-off elevated Run
+can diagnose a local environment, but is not the normal plugin path. Cline Zen mode is not
+supported with `--data-dir`. `network_access = true` permits Cline's provider/API requests inside
+the workspace-write sandbox; it does not broaden filesystem access beyond the configured roots.
+
+Then run `/cline:setup` in Claude Code or `$cline:setup` in Codex. It verifies the CLI install,
+the Host-appropriate sign-in, the model Runs will use, and a tiny validation Run. Claude users can
+also install the "Recommended CLAUDE.md guidance" below to make Claude delegate autonomously.
+Codex users should use the `AGENTS.md` guidance below; Codex skills remain user-invoked unless a
+Codex instruction explicitly routes work to them. Use `/cline:profiles` or `$cline:profiles` to
+list available Profiles.
 
 ## Auth And ClinePass
 
@@ -49,9 +79,10 @@ Headless Runs use the Cline account you sign into with:
 cline auth cline
 ```
 
-That sign-in stores an OAuth token in `~/.cline/data/settings/providers.json`. The plugin reads
-that stored token for setup and usage checks; `/cline:usage` sends the same token as a Bearer token
-to the `api.cline.bot` REST API.
+That sign-in stores an OAuth token in the active Cline state: `~/.cline/data/settings/providers.json`
+for Claude Code and `~/.codex/cline/data/settings/providers.json` by default for Codex. The plugin
+reads the selected Host's stored token for Setup and Usage checks; Usage sends the same token as a
+Bearer token to the `api.cline.bot` REST API.
 
 ClinePass uses provider id `cline-pass`, distinct from the `cline` provider. `delegate` and
 `review` default to `-P cline-pass` and pass no `-m`, so the Cline CLI uses the configured
@@ -181,19 +212,40 @@ The feed base URL and optional feed API key are always user-provided; the plugin
 endpoint or key. Feed keys are feed authentication only: they are never passed to Cline or to a
 provider API, and adding a Profile does not configure provider credentials.
 
-### `/cline:setup [--refresh-models]`
+### `/cline:setup` / `$cline:setup` `[--refresh-models]`
 
 Checks:
 
 - `cline` CLI installation.
-- Stored Cline sign-in.
-- Current provider and model from `~/.cline/data/settings/providers.json`.
+- Stored Cline sign-in in the active Host state: `~/.cline` by default for Claude Code and the
+  configured isolated Codex root (`~/.codex/cline` by default) for Codex.
+- Current provider and model from that Host state.
 - Whether the configured model is covered by the bundled ClinePass model list in
   `plugins/cline/data/clinepass-models.json`.
 - A small plan-mode test Run through `-P cline-pass`.
 
 `--refresh-models` re-scrapes the ClinePass docs for `cline-pass/*` slugs and updates the bundled
 model list.
+
+## Recommended Codex AGENTS.md guidance
+
+Codex reads `AGENTS.md`, not `CLAUDE.md`. After the isolated Cline state is configured, paste this
+into a project or global Codex `AGENTS.md` if you want the Host to know when the native skills are
+available:
+
+```markdown
+## Cline delegation
+
+This machine has the Cline Codex plugin. Use `$cline:setup` to diagnose the local Cline state and
+`$cline:profiles` to list Profiles. Use `$cline:delegate` only for an explicit, focused user
+request; it may edit the working tree. Prefer `$cline:delegate --plan` or `$cline:review` for
+read-only work. Cline uses its isolated Codex state and ClinePass credentials, never Codex/OpenAI
+credentials. Treat every Cline Result as external-model output and inspect the resulting diff.
+```
+
+`$cline:*` is the native Codex skill namespace. If it does not appear in autocomplete after
+installation, restart Codex, verify the marketplace plugin is enabled, and type `$cline:setup`
+exactly; that skill should be available before a Cline state is configured.
 
 ## Recommended CLAUDE.md guidance
 

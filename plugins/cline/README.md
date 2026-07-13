@@ -8,15 +8,54 @@ ClinePass subscription instead of the Host session's budget. Each command is a o
 
 - Node 22+.
 - The Cline CLI: `npm i -g cline` (verified against cline 3.0.37).
-- Sign in once: `cline auth cline`.
+- Sign in once: `cline auth cline` for Claude Code, or the isolated Codex-state command below.
 
-Run `/cline:setup` after installing in Claude Code or `$cline:setup` in Codex: it verifies all three, runs a tiny validation Run, and
-offers to add the "Recommended CLAUDE.md guidance" below to your `CLAUDE.md` — accept that offer
-to make Claude delegate autonomously. Use `/cline:profiles` to list model profiles.
+Run `/cline:setup` after installing in Claude Code or `$cline:setup` in Codex: it verifies the
+Host-appropriate prerequisites and runs a tiny validation Run. The Claude-only onboarding offer
+adds `CLAUDE.md` guidance; Codex uses `AGENTS.md` guidance instead. Use `/cline:profiles` or
+`$cline:profiles` to list model Profiles.
 
 Install the Codex plugin by adding this repository as a marketplace with
 `codex plugin marketplace add tm-henningnt/cline-plugin-cc`, then restart the Codex desktop app
 and install `cline` from that marketplace.
+
+### Codex isolated Cline state
+
+Codex must use a Cline state root that its workspace-write sandbox can write. Configure a
+non-repository root in `~/.codex/config.toml` and authenticate it once:
+
+```toml
+[sandbox_workspace_write]
+writable_roots = ["/Users/you/.codex/cline"]
+network_access = true
+```
+
+```sh
+mkdir -p ~/.codex/cline
+cline --data-dir ~/.codex/cline auth cline
+```
+
+Restart Codex and invoke `$cline:setup`. The default root is `~/.codex/cline`; set
+`CLINE_CODEX_DATA_DIR` only when an alternative user-owned writable root is required. Never put
+Cline state in a repository or copy `~/.cline` into it. `--data-dir` does not support Cline Zen.
+The network setting permits Cline's provider/API calls inside Codex's workspace-write sandbox; it
+does not grant extra filesystem access.
+
+Codex reads `AGENTS.md`, not `CLAUDE.md`. Add this short guidance to a project or global Codex
+`AGENTS.md` if the Host should know when to invoke the plugin:
+
+```markdown
+## Cline delegation
+
+Use `$cline:setup` for local Cline diagnostics and `$cline:profiles` for Profiles. Use
+`$cline:delegate` only for an explicit focused request; it may edit the working tree. Prefer
+`$cline:delegate --plan` or `$cline:review` for read-only work. Cline uses isolated ClinePass
+credentials, never Codex/OpenAI credentials. Inspect every resulting diff.
+```
+
+If `$cline:setup` is not suggested after installation, restart Codex and run `codex plugin list`
+to check the marketplace plugin is available. Invoke `$cline:setup` only after the skill is visible;
+it checks Cline state rather than plugin activation.
 
 ## Commands
 

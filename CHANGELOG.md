@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.2] - 2026-07-13
+
+- Fixed: Codex Cline state now rejects project-local paths even through an external Run cwd or
+  symlink, preventing session and credential data from being written into a repository.
+- Changed: Codex setup and documentation now require workspace-write network access alongside the
+  isolated writable state root, and present shell-safe sign-in remediation for paths with spaces
+  or apostrophes.
+- Changed: Codex installation guidance now uses `codex plugin list` as the reliable activation
+  check before suggesting the `$cline:setup` skill invocation.
+
 ## [0.9.1] - 2026-07-13
 
 - Added: native Codex plugin packaging, marketplace metadata, and skills for Delegate, Review,

@@ -1,6 +1,6 @@
 {
   "name": "cline",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Delegate coding tasks to the local Cline CLI from Codex.",
   "author": {
     "name": "Henning Naarlien-Tolpinrud"
@@ -8,12 +8,12 @@
   "homepage": "https://github.com/tm-henningnt/cline-plugin-cc",
   "repository": "https://github.com/tm-henningnt/cline-plugin-cc",
   "license": "MIT",
-  "keywords": ["cline", "clinepass", "delegation", "profiles", "model-feed"],
+  "keywords": ["cline", "clinepass", "codex", "delegation", "profiles", "model-feed"],
   "skills": "./skills/",
   "interface": {
     "displayName": "Cline",
     "shortDescription": "Delegate local coding tasks to Cline from Codex.",
-    "longDescription": "Run Cline delegation, review, setup, usage, profile, and model-feed workflows from Codex using your local ClinePass sign-in.",
+    "longDescription": "Run Cline delegation, review, setup, usage, profile, and model-feed workflows from Codex using an isolated local ClinePass sign-in.",
     "developerName": "Henning Naarlien-Tolpinrud",
     "category": "Productivity",
     "capabilities": ["Interactive", "Write"],

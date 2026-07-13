@@ -469,6 +469,66 @@ test("setup: signed-in covered model runs the validation Run and reports ok", as
   assert.match(out.text, /Plugin Run default/);
 });
 
+test("setup: an unavailable Codex state skips the validation Run with exact remediation", async () => {
+  let testRunAttempted = false;
+  const out = await setup(
+    {},
+    {
+      getCliVersion: async () => "cline 3.0.39",
+      readAuth: async () => ({ token: "oauth-token", status: "ok" }),
+      getState: async () => ({ ok: false, status: "missing", path: "/home/user/.codex/cline" }),
+      loadModels: async () => ({ models: MODELS }),
+      loadProfiles: async () => ({ profiles: [] }),
+      loadProjectProfiles: async () => null,
+      testRun: async () => {
+        testRunAttempted = true;
+        return { ok: true, detail: "OK" };
+      },
+    },
+  );
+
+  assert.equal(out.ok, false);
+  assert.equal(testRunAttempted, false);
+  assert.match(out.text, /sandbox_workspace_write\.writable_roots/);
+  assert.match(out.text, /sandbox_workspace_write\.network_access/);
+  assert.match(out.text, /cline --data-dir '\/home\/user\/\.codex\/cline' auth cline/);
+});
+
+test("setup: quotes an isolated state path in the sign-in remediation", () => {
+  const text = formatSetupReport({
+    cliVersion: "cline 3.0.39",
+    signedIn: false,
+    authStatus: "missing",
+    clineState: { ok: true, status: "ready", path: "/home/user/Cline State's" },
+    models: MODELS,
+  });
+
+  assert.match(text, /cline --data-dir '\/home\/user\/Cline State"'"'s' auth cline/);
+});
+
+test("setup: an unsafe Codex state skips auth-dependent validation", async () => {
+  let testRunAttempted = false;
+  const out = await setup(
+    {},
+    {
+      getCliVersion: async () => "cline 3.0.39",
+      readAuth: async () => ({ token: "", status: "missing" }),
+      getState: async () => ({ ok: false, status: "unsafe", path: "/work/project/.cline" }),
+      loadModels: async () => ({ models: MODELS }),
+      loadProfiles: async () => ({ profiles: [] }),
+      loadProjectProfiles: async () => null,
+      testRun: async () => {
+        testRunAttempted = true;
+        return { ok: true, detail: "OK" };
+      },
+    },
+  );
+
+  assert.equal(out.ok, false);
+  assert.equal(testRunAttempted, false);
+  assert.match(out.text, /inside the project and is not allowed/);
+});
+
 test("setup: reports explicit profiles loaded through deps", async () => {
   const out = await setup(
     {},

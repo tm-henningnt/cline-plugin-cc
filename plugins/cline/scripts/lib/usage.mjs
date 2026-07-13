@@ -1,4 +1,5 @@
 import { formatUsd } from "./format.mjs";
+import { shellQuote } from "./host-state.mjs";
 import { formatLedgerSummary, summarizeLedger } from "./ledger.mjs";
 
 const API_BASE_URL = "https://api.cline.bot/api/v1";
@@ -29,13 +30,16 @@ export async function usage(opts = {}, deps) {
     if (opts.authStatus === "unreadable") {
       return {
         ok: false,
-        text: "Your Cline settings file (~/.cline/data/settings/providers.json) exists but could not be read. Fix or remove it, then run `cline auth cline`.",
+        text: `Your Cline settings file (${opts.authPath ?? "~/.cline/data/settings/providers.json"}) exists but could not be read. Fix or remove it, then run \`cline${opts.stateRoot ? ` --data-dir ${shellQuote(opts.stateRoot)}` : ""} auth cline\`.`,
       };
     }
 
     return {
       ok: false,
-      text: "Cline is not signed in. Run /cline:setup or sign in to Cline, then retry /cline:usage.",
+      text:
+        opts.host === "codex"
+          ? "Cline is not signed in to the Codex state directory. Run $cline:setup, then authenticate the isolated Cline state before retrying $cline:usage."
+          : "Cline is not signed in. Run /cline:setup or sign in to Cline, then retry /cline:usage.",
     };
   }
 

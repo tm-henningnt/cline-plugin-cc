@@ -166,6 +166,17 @@ test("usage: missing token returns a setup message without fetching", async () =
   assert.match(out.text, /sign in/i);
 });
 
+test("usage: Codex missing token directs users to isolated-state setup", async () => {
+  const out = await usage(
+    { host: "codex", stateRoot: "/home/user/.codex/cline" },
+    { fetchJson: async () => assert.fail("fetch should not be called") },
+  );
+
+  assert.equal(out.ok, false);
+  assert.match(out.text, /Codex state directory/);
+  assert.match(out.text, /\$cline:setup/);
+});
+
 test("usage: unreadable auth settings returns a repair message without fetching", async () => {
   let fetched = false;
   const out = await usage(
@@ -180,6 +191,16 @@ test("usage: unreadable auth settings returns a repair message without fetching"
   assert.equal(out.ok, false);
   assert.equal(fetched, false);
   assert.match(out.text, /could not be read/);
+});
+
+test("usage: unreadable Codex settings quote the isolated state path", async () => {
+  const out = await usage(
+    { authStatus: "unreadable", stateRoot: "/home/user/Cline State's" },
+    { fetchJson: async () => assert.fail("fetch should not be called") },
+  );
+
+  assert.equal(out.ok, false);
+  assert.match(out.text, /cline --data-dir '\/home\/user\/Cline State"'"'s' auth cline/);
 });
 
 test("summarizeUsage: sums counts, credits and micro-dollar cost over rolling windows", () => {

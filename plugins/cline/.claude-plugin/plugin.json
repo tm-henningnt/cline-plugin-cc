@@ -1,6 +1,6 @@
 {
   "name": "cline",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Delegate coding tasks to the Cline CLI from Claude Code or Codex using ClinePass: one-shot delegation, read-only review, usage, setup checks, named provider+model profiles, and Model Feed profile discovery.",
   "author": { "name": "Henning Naarlien-Tolpinrud" },
   "homepage": "https://github.com/tm-henningnt/cline-plugin-cc",
