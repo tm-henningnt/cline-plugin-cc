@@ -22,7 +22,7 @@ before(() => {
 // repo rule that tests must not spawn a real cline process.
 const mode = process.env.FAKE_CLINE_MODE ?? "success";
 if (process.argv.includes("--version")) {
-  console.log("3.0.37");
+  console.log("3.0.40");
   process.exit(0);
 }
 async function writeSuccess() {
@@ -238,6 +238,40 @@ test("dispatcher: Codex delegate passes its isolated Cline state root", async ()
   assert.equal(out.code, 0);
   const argv = JSON.parse(readFileSync(argvPath, "utf8"));
   assert.deepEqual(argv.slice(0, 2), ["--data-dir", "/var/state/cline"]);
+});
+
+test("dispatcher: Codex setup reads current settings/providers.json state", async () => {
+  const stateRoot = mkdtempSync(join(tmpdir(), "cline-codex-current-state-"));
+  try {
+    mkdirSync(join(stateRoot, "settings"));
+    writeFileSync(
+      join(stateRoot, "settings", "providers.json"),
+      JSON.stringify({
+        lastUsedProvider: "cline-pass",
+        providers: {
+          "cline-pass": {
+            settings: {
+              provider: "cline-pass",
+              model: "cline-pass/deepseek-v4-flash",
+              auth: { accessToken: "test-token", accountId: "test-account" },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const out = await runDispatcher(["setup"], {
+      env: { CLINE_PLUGIN_HOST: "codex", CLINE_CODEX_DATA_DIR: stateRoot },
+    });
+
+    assert.equal(out.code, 0);
+    assert.match(out.stdout, /Codex Cline state: .* is writable/);
+    assert.match(out.stdout, /Sign-in: stored Cline OAuth token found/);
+    assert.match(out.stdout, /provider `cline-pass`, model `cline-pass\/deepseek-v4-flash`/);
+  } finally {
+    rmSync(stateRoot, { recursive: true, force: true });
+  }
 });
 
 test("dispatcher: Codex delegate rejects a project-local Cline state root before spawning", async () => {

@@ -7,7 +7,7 @@ ClinePass subscription instead of the Host session's budget. Each command is a o
 ## Prerequisites
 
 - Node 22+.
-- The Cline CLI: `npm i -g cline` (verified against cline 3.0.37).
+- The Cline CLI: `npm i -g cline` (verified against cline 3.0.40).
 - Sign in once: `cline auth cline` for Claude Code, or the isolated Codex-state command below.
 
 Run `/cline:setup` after installing in Claude Code or `$cline:setup` in Codex: it verifies the
@@ -35,7 +35,12 @@ mkdir -p ~/.codex/cline
 cline --data-dir ~/.codex/cline auth cline
 ```
 
-Restart Codex and invoke `$cline:setup`. The default root is `~/.codex/cline`; set
+Preserve any existing `writable_roots` entries; add the Cline directory rather than replacing
+the array. Restart Codex (or open a new Codex session) before invoking `$cline:setup`, because
+sandbox policy changes do not affect an already-running session. Cline 3.0.40 stores provider
+settings at `settings/providers.json` inside this root; the plugin also supports the older
+`data/settings/providers.json` layout. If Setup says the state is "not checked", it cannot yet
+access the directory and is not reporting an OAuth failure. The default root is `~/.codex/cline`; set
 `CLINE_CODEX_DATA_DIR` only when an alternative user-owned writable root is required. Never put
 Cline state in a repository or copy `~/.cline` into it. `--data-dir` does not support Cline Zen.
 The network setting permits Cline's provider/API calls inside Codex's workspace-write sandbox; it
@@ -49,8 +54,11 @@ Codex reads `AGENTS.md`, not `CLAUDE.md`. Add this short guidance to a project o
 
 Use `$cline:setup` for local Cline diagnostics and `$cline:profiles` for Profiles. Use
 `$cline:delegate` only for an explicit focused request; it may edit the working tree. Prefer
-`$cline:delegate --plan` or `$cline:review` for read-only work. Cline uses isolated ClinePass
-credentials, never Codex/OpenAI credentials. Inspect every resulting diff.
+`$cline:delegate --plan` or `$cline:review` for read-only work. Before the first Run, Setup must
+find `~/.codex/cline` as a writable root with network access, authenticated via
+`cline --data-dir ~/.codex/cline auth cline`. Cline uses isolated ClinePass credentials, never
+Codex/OpenAI credentials; never copy, print, or commit its `providers.json`. Inspect every
+resulting diff.
 ```
 
 If `$cline:setup` is not suggested after installation, restart Codex and run `codex plugin list`

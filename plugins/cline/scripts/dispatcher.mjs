@@ -228,25 +228,39 @@ function readStoredClineAuth(clineState = {}) {
       settingsPath: null,
     };
   }
-  const providersPath = clineState.stateRoot
-    ? join(clineState.stateRoot, "data", "settings", "providers.json")
-    : join(homedir(), ".cline", "data", "settings", "providers.json");
+  const stateRoot = clineState.stateRoot ?? join(homedir(), ".cline");
+  const providersPaths = [
+    join(stateRoot, "data", "settings", "providers.json"),
+    join(stateRoot, "settings", "providers.json"),
+  ];
 
-  try {
-    const providers = JSON.parse(readFileSync(providersPath, "utf8"));
-    return { ...selectClineAuth(providers), status: "ok", settingsPath: providersPath };
-  } catch (error) {
-    const status = error?.code === "ENOENT" ? "missing" : "unreadable";
-    return {
-      token: "",
-      accountId: "",
-      model: null,
-      provider: null,
-      clinePassModel: null,
-      status,
-      settingsPath: providersPath,
-    };
+  for (const settingsPath of providersPaths) {
+    try {
+      const providers = JSON.parse(readFileSync(settingsPath, "utf8"));
+      return { ...selectClineAuth(providers), status: "ok", settingsPath };
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      return {
+        token: "",
+        accountId: "",
+        model: null,
+        provider: null,
+        clinePassModel: null,
+        status: "unreadable",
+        settingsPath,
+      };
+    }
   }
+
+  return {
+    token: "",
+    accountId: "",
+    model: null,
+    provider: null,
+    clinePassModel: null,
+    status: "missing",
+    settingsPath: providersPaths.at(-1),
+  };
 }
 
 function inspectClineState(clineState) {

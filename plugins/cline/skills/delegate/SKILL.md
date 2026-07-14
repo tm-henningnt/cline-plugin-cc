@@ -19,5 +19,7 @@ instructions. Then inspect `git diff --stat`, summarise changed files in one lin
 commit, restore, or otherwise alter the working tree beyond the explicit Cline Run.
 
 Normal Delegates may write. Recommend `--plan` or `--read-only` when the user needs a no-write
-Run. The local `cline` CLI and its isolated Codex-state `cline auth cline` sign-in are required;
-never substitute Codex or OpenAI credentials.
+Run. Before the first Codex Delegate, confirm `$cline:setup` has found the isolated state root.
+Codex sign-in is `cline --data-dir ~/.codex/cline auth cline`, with that non-repository directory
+listed in `sandbox_workspace_write.writable_roots` and network access enabled; never substitute
+Codex or OpenAI credentials.

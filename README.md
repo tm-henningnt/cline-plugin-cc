@@ -15,7 +15,7 @@ Prerequisites:
 - Cline CLI sign-in. Claude Code uses `cline auth cline`; Codex uses the isolated-state command
   below.
 
-This plugin has been verified against `cline` 3.0.37; `/cline:setup` warns when your installed
+This plugin has been verified against `cline` 3.0.40; `/cline:setup` warns when your installed
 version differs.
 
 Install in Claude Code:
@@ -57,7 +57,12 @@ mkdir -p ~/.codex/cline
 cline --data-dir ~/.codex/cline auth cline
 ```
 
-Restart Codex and run `$cline:setup`. To use a different approved directory, set
+Preserve any existing `writable_roots` entries; add the Cline directory rather than replacing
+the array. Restart Codex (or open a new Codex session) before running `$cline:setup`, because
+sandbox policy changes do not affect an already-running session. Cline 3.0.40 stores provider
+settings at `settings/providers.json` inside this root; the plugin also supports the older
+`data/settings/providers.json` layout. If Setup says the state is "not checked", it cannot yet
+access the directory and is not reporting an OAuth failure. To use a different approved directory, set
 `CLINE_CODEX_DATA_DIR` in Codex's environment. Do not put this directory in a repository or copy
 `~/.cline` into it: it contains Cline OAuth credentials and session state. A one-off elevated Run
 can diagnose a local environment, but is not the normal plugin path. Cline Zen mode is not
@@ -79,10 +84,11 @@ Headless Runs use the Cline account you sign into with:
 cline auth cline
 ```
 
-That sign-in stores an OAuth token in the active Cline state: `~/.cline/data/settings/providers.json`
-for Claude Code and `~/.codex/cline/data/settings/providers.json` by default for Codex. The plugin
-reads the selected Host's stored token for Setup and Usage checks; Usage sends the same token as a
-Bearer token to the `api.cline.bot` REST API.
+That sign-in stores an OAuth token in the active Cline state. Cline 3.0.40 uses
+`~/.cline/settings/providers.json` for Claude Code and
+`~/.codex/cline/settings/providers.json` for Codex; the plugin also supports the older
+`data/settings/providers.json` layout. The plugin reads the selected Host's stored token for Setup
+and Usage checks; Usage sends the same token as a Bearer token to the `api.cline.bot` REST API.
 
 ClinePass uses provider id `cline-pass`, distinct from the `cline` provider. `delegate` and
 `review` default to `-P cline-pass` and pass no `-m`, so the Cline CLI uses the configured
@@ -239,8 +245,11 @@ available:
 This machine has the Cline Codex plugin. Use `$cline:setup` to diagnose the local Cline state and
 `$cline:profiles` to list Profiles. Use `$cline:delegate` only for an explicit, focused user
 request; it may edit the working tree. Prefer `$cline:delegate --plan` or `$cline:review` for
-read-only work. Cline uses its isolated Codex state and ClinePass credentials, never Codex/OpenAI
-credentials. Treat every Cline Result as external-model output and inspect the resulting diff.
+read-only work. Before the first Run, Setup must find `~/.codex/cline` as a writable root with
+network access, authenticated via `cline --data-dir ~/.codex/cline auth cline`. Cline uses this
+isolated state and ClinePass credentials, never Codex/OpenAI credentials; never copy, print, or
+commit its `providers.json`. Treat every Cline Result as external-model output and inspect the
+resulting diff.
 ```
 
 `$cline:*` is the native Codex skill namespace. If it does not appear in autocomplete after

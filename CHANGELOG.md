@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.3] - 2026-07-14
+
+- Fixed: Cline 3.0.40 moved provider state from `data/settings/providers.json` to
+  `settings/providers.json`; Codex Setup and Usage now discover either safe local layout, so a
+  valid isolated sign-in is no longer reported as missing.
+- Changed: Codex setup, delegation, and usage guidance now calls out the required writable root,
+  network access, session restart after policy changes, and the credential-file handling boundary.
+- Changed: verified Cline compatibility target is now 3.0.40, backed by an authenticated Setup
+  validation Run and a fixture-based current-layout regression test.
+
 ## [0.9.2] - 2026-07-13
 
 - Fixed: Codex Cline state now rejects project-local paths even through an external Run cwd or

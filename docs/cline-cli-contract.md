@@ -1,9 +1,9 @@
 # Cline CLI & API contract (verified)
 
-The behavioral contract this plugin's parsers and commands are built against, verified live
-against `cline` 3.0.37 (`VERIFIED_CLINE_VERSION` in `plugins/cline/scripts/lib/setup.mjs`).
-When re-verifying against a newer cline, update that constant and re-check every section here;
-`/cline:setup` warns when the installed version differs from the verified one.
+The current Setup/auth compatibility contract is verified live against `cline` 3.0.40
+(`VERIFIED_CLINE_VERSION` in `plugins/cline/scripts/lib/setup.mjs`). The detailed NDJSON and
+transport observations labelled 3.0.37 below remain historical evidence until re-captured;
+`/cline:setup` warns when the installed version differs from the current verified target.
 
 ## CLI invocation
 
@@ -135,9 +135,10 @@ Every `delegate` and `review` dispatch now prints observability lines:
 
 ## Providers: ClinePass is `cline-pass`, not `cline`
 
-Empirically confirmed on a real account: `~/.cline/data/settings/providers.json` holds separate
-`cline` and `cline-pass` provider entries. The `cline` provider routes to a different, metered
-tier (observed model: `poolside/laguna-xs-2.1`); only `-P cline-pass` returns
+Empirically confirmed on a real account: the provider settings file holds separate `cline` and
+`cline-pass` provider entries. In Cline 3.0.40 it is `~/.cline/settings/providers.json`; older
+state used `~/.cline/data/settings/providers.json`. The `cline` provider routes to a different,
+metered tier (observed model: `poolside/laguna-xs-2.1`); only `-P cline-pass` returns
 `model.provider: "cline-pass"` and a `cline-pass/*` model, and only it spends the flat ClinePass
 subscription. The CLI's own default provider is `cline` — which is why delegate/review always
 pass `-P cline-pass` explicitly (ADR-0002).
@@ -175,10 +176,12 @@ The **ledger** (`.cline-runs.ndjson`) is appended next to whichever profiles fil
 
 ## Auth
 
-- Sign-in: `cline auth cline` (OAuth). The token is stored in
-  `~/.cline/data/settings/providers.json` (`providers.<id>.settings.auth.accessToken` plus
-  `auth.accountId`). Delegated Runs use the stored sign-in implicitly — the plugin passes no
-  credential to the subprocess. Rotate by re-running `cline auth cline`.
+- Sign-in: `cline auth cline` (OAuth). Cline 3.0.40 stores provider settings at
+  `~/.cline/settings/providers.json`; older Cline state uses
+  `~/.cline/data/settings/providers.json`. The dispatcher tries the legacy path first, then the
+  current path. For Codex, substitute the isolated `~/.codex/cline` state root in either layout.
+  Delegated Runs use the stored sign-in implicitly — the plugin passes no credential to the
+  subprocess. Rotate by re-running the Host-appropriate auth command.
 - `cline auth` is **credential establishment only**, not a model switcher. Verified live on
   3.0.37: `cline auth --provider cline-pass --modelid <slug>` without `--apikey` always fails
   (`auth quick setup requires --apikey`) and mutates nothing. Per-Run model selection is

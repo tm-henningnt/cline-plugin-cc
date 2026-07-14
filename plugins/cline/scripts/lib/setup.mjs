@@ -4,7 +4,7 @@ import { extractResult } from "./parse-ndjson.mjs";
 
 // The cline CLI version the NDJSON parsing and flags were verified against
 // (docs/cline-cli-contract.md). Update when re-verifying against a newer cline.
-export const VERIFIED_CLINE_VERSION = "3.0.37";
+export const VERIFIED_CLINE_VERSION = "3.0.40";
 
 const CLINEPASS_DOCS_URL = "https://docs.cline.bot/getting-started/clinepass";
 const CLINEPASS_MODELS_NOTE =
@@ -188,7 +188,7 @@ export function formatSetupReport(state) {
       );
     } else if (state.clineState.status === "missing") {
       lines.push(
-        `- [ ] Codex Cline state: ${root} does not exist or is outside this sandbox. Create it, add it to Codex \`sandbox_workspace_write.writable_roots\`, enable \`sandbox_workspace_write.network_access\`, then run \`cline --data-dir ${shellQuote(state.clineState.path)} auth cline\`.`,
+        `- [ ] Codex Cline state: ${root} does not exist or is outside this sandbox. In \`~/.codex/config.toml\`, ensure \`[sandbox_workspace_write]\` has a \`writable_roots\` array that includes this directory and \`network_access = true\` (preserve existing roots). Restart Codex so the sandbox policy reloads, then run \`cline --data-dir ${shellQuote(state.clineState.path)} auth cline\`.`,
       );
     } else {
       lines.push(
@@ -197,11 +197,13 @@ export function formatSetupReport(state) {
     }
   }
 
-  if (state?.signedIn) {
+  if (state?.clineState && !state.clineState.ok) {
+    lines.push("- [ ] Sign-in: not checked until Codex can access the isolated Cline state.");
+  } else if (state?.signedIn) {
     lines.push("- [x] Sign-in: stored Cline OAuth token found.");
   } else if (state?.authStatus === "unreadable") {
     lines.push(
-      `- [ ] Sign-in: settings file unreadable — fix or remove ${state?.settingsPath ?? "~/.cline/data/settings/providers.json"}, then run \`cline${state?.clineState?.path ? ` --data-dir ${shellQuote(state.clineState.path)}` : ""} auth cline\`.`,
+      `- [ ] Sign-in: settings file unreadable — fix or remove ${state?.settingsPath ?? "~/.cline/settings/providers.json"}, then run \`cline${state?.clineState?.path ? ` --data-dir ${shellQuote(state.clineState.path)}` : ""} auth cline\`.`,
     );
   } else {
     lines.push(

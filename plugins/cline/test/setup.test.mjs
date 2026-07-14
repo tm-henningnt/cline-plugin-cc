@@ -249,8 +249,8 @@ test("extractClinePassSlugs: bounds hostile docs output", () => {
 });
 
 test("cliVersionMismatch: extracts semver and ignores verified or unknown versions", () => {
-  assert.equal(cliVersionMismatch("3.0.37"), null);
-  assert.equal(cliVersionMismatch("cline 3.0.37"), null);
+  assert.equal(cliVersionMismatch("3.0.40"), null);
+  assert.equal(cliVersionMismatch("cline 3.0.40"), null);
   assert.equal(cliVersionMismatch("cline 3.2.0"), "3.2.0");
   assert.equal(cliVersionMismatch("installed"), null);
 });
@@ -265,10 +265,10 @@ test("formatSetupReport: warns when installed cline differs from the verified ve
     models: MODELS,
     testRun: null,
   });
-  assert.match(mismatched, /differs from the verified 3\.0\.37/);
+  assert.match(mismatched, /differs from the verified 3\.0\.40/);
 
   const verified = formatSetupReport({
-    cliVersion: "3.0.37",
+    cliVersion: "3.0.40",
     signedIn: true,
     provider: "cline",
     model: "cline-pass/glm-5.2",
@@ -489,9 +489,13 @@ test("setup: an unavailable Codex state skips the validation Run with exact reme
 
   assert.equal(out.ok, false);
   assert.equal(testRunAttempted, false);
-  assert.match(out.text, /sandbox_workspace_write\.writable_roots/);
-  assert.match(out.text, /sandbox_workspace_write\.network_access/);
+  assert.match(out.text, /\[sandbox_workspace_write\]/);
+  assert.match(out.text, /writable_roots.*includes this directory/);
+  assert.match(out.text, /network_access = true/);
+  assert.match(out.text, /Restart Codex so the sandbox policy reloads/);
   assert.match(out.text, /cline --data-dir '\/home\/user\/\.codex\/cline' auth cline/);
+  assert.match(out.text, /Sign-in: not checked until Codex can access the isolated Cline state/);
+  assert.doesNotMatch(out.text, /Sign-in: not signed in/);
 });
 
 test("setup: quotes an isolated state path in the sign-in remediation", () => {

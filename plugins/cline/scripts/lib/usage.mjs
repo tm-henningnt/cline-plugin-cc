@@ -30,7 +30,7 @@ export async function usage(opts = {}, deps) {
     if (opts.authStatus === "unreadable") {
       return {
         ok: false,
-        text: `Your Cline settings file (${opts.authPath ?? "~/.cline/data/settings/providers.json"}) exists but could not be read. Fix or remove it, then run \`cline${opts.stateRoot ? ` --data-dir ${shellQuote(opts.stateRoot)}` : ""} auth cline\`.`,
+        text: `Your Cline settings file (${opts.authPath ?? "~/.cline/settings/providers.json"}) exists but could not be read. Fix or remove it, then run \`cline${opts.stateRoot ? ` --data-dir ${shellQuote(opts.stateRoot)}` : ""} auth cline\`.`,
       };
     }
 
