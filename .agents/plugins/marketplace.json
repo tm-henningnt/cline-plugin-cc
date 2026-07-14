@@ -1,7 +1,7 @@
 {
-  "name": "personal",
+  "name": "tm-henningnt",
   "interface": {
-    "displayName": "Personal"
+    "displayName": "tm-henningnt"
   },
   "plugins": [
     {
